@@ -38,7 +38,8 @@ h1 {
   border-radius: 12px;
   padding: 10px 12px;
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   margin-bottom: 14px;
@@ -252,6 +253,49 @@ h1 {
   margin: 12px 0 0;
   color: #cbd5e1;
   font-size: 0.95rem;
+}
+
+.level-overlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgb(2 6 23 / 0.55);
+  z-index: 30;
+}
+
+.level-overlay.hidden {
+  display: none;
+}
+
+.level-card {
+  width: min(90vw, 360px);
+  background: linear-gradient(180deg, rgb(15 23 42 / 0.96), rgb(30 41 59 / 0.96));
+  border: 1px solid rgb(255 255 255 / 0.2);
+  border-radius: 14px;
+  padding: 18px;
+  text-align: center;
+  box-shadow: 0 24px 60px rgb(2 6 23 / 0.6);
+}
+
+.level-card h2 {
+  margin: 0 0 10px;
+  font-size: 1.4rem;
+}
+
+.level-card p {
+  margin: 0 0 14px;
+  color: #cbd5e1;
+}
+
+#overlayActionBtn {
+  border: 0;
+  background: #22c55e;
+  color: #052e16;
+  font-weight: 800;
+  border-radius: 10px;
+  padding: 10px 16px;
+  cursor: pointer;
 }
 
 .combo-toast {

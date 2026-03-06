@@ -16,6 +16,20 @@ A simple match-3 (消消乐) game built with vanilla HTML/CSS/JS. Works fully of
 
 ---
 
+## 关卡 / Levels
+
+- 游戏包含内置分数目标关卡（无地图模式），每关有 `targetScore` 和 `moveLimit`。
+- 每次有效交换会消耗 1 步，达到目标分数立即过关；步数用尽且未达标则失败。
+- 过关显示 `Next`，失败显示 `Retry`。
+- 当前关卡索引和历史最高分会持久化到 `localStorage`。
+
+- The game includes built-in score-target levels (no map), each with `targetScore` and `moveLimit`.
+- Every valid swap uses 1 move. Hitting target score wins immediately; running out of moves loses the level.
+- End overlay shows `Next` on win and `Retry` on loss.
+- Current level index and best score are persisted in `localStorage`.
+
+---
+
 ## 特殊糖果 / Special candies
 
 - **四连（直线 4 个）**：生成 **条纹糖**。

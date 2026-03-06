@@ -11,20 +11,35 @@ const SCORE_PER_GEM = 10;
 const BIG_CLEAR_SHAKE_THRESHOLD = 8;
 const TARGET_HIGHLIGHT_THRESHOLD = 8;
 const AUDIO_STORAGE_KEY = 'match3.audioEnabled';
+const LEVEL_STORAGE_KEY = 'match3.levelIndex';
+const BEST_SCORE_STORAGE_KEY = 'match3.bestScore';
 const SFX_SOURCES = {
   clear: 'assets/sfx/clear.mp3',
   swap: 'assets/sfx/swap.mp3',
   invalid: 'assets/sfx/invalid.mp3',
   combo: 'assets/sfx/combo.mp3',
 };
+const LEVELS = [
+  { targetScore: 900, moveLimit: 16 },
+  { targetScore: 1300, moveLimit: 18 },
+  { targetScore: 1750, moveLimit: 20 },
+];
 
 const boardEl = document.getElementById('board');
 const fxEl = document.getElementById('fx');
 const scoreEl = document.getElementById('score');
+const targetScoreEl = document.getElementById('targetScore');
+const levelEl = document.getElementById('level');
+const bestScoreEl = document.getElementById('bestScore');
 const movesEl = document.getElementById('moves');
+const moveLimitEl = document.getElementById('moveLimit');
 const resetBtn = document.getElementById('resetBtn');
 const audioBtn = document.getElementById('audioBtn');
 const comboToastEl = document.getElementById('comboToast');
+const levelOverlayEl = document.getElementById('levelOverlay');
+const overlayTitleEl = document.getElementById('overlayTitle');
+const overlayBodyEl = document.getElementById('overlayBody');
+const overlayActionBtn = document.getElementById('overlayActionBtn');
 
 let board = [];
 let selected = null;
@@ -33,6 +48,9 @@ let moves = 0;
 let isLocked = false;
 let audioEnabled = false;
 let comboToastTimer = 0;
+let currentLevelIndex = 0;
+let bestScore = 0;
+let pendingOutcome = null;
 const missingSfx = new Set();
 const sfxPool = new Map();
 
@@ -128,6 +146,11 @@ function generateBoardWithoutMatches() {
 function updateHud() {
   scoreEl.textContent = String(score);
   movesEl.textContent = String(moves);
+  const level = LEVELS[currentLevelIndex];
+  if (targetScoreEl) targetScoreEl.textContent = String(level.targetScore);
+  if (moveLimitEl) moveLimitEl.textContent = String(level.moveLimit);
+  if (levelEl) levelEl.textContent = String(currentLevelIndex + 1);
+  if (bestScoreEl) bestScoreEl.textContent = String(bestScore);
 }
 
 function gemClasses(row, col) {
@@ -259,6 +282,80 @@ function updateAudioButton() {
 function loadAudioPreference() {
   audioEnabled = safeGetLocalStorage(AUDIO_STORAGE_KEY) === '1';
   updateAudioButton();
+}
+
+function clampLevelIndex(index) {
+  if (!Number.isInteger(index)) return 0;
+  if (index < 0) return 0;
+  if (index >= LEVELS.length) return LEVELS.length - 1;
+  return index;
+}
+
+function loadProgress() {
+  const storedLevel = Number.parseInt(safeGetLocalStorage(LEVEL_STORAGE_KEY) || '', 10);
+  const storedBest = Number.parseInt(safeGetLocalStorage(BEST_SCORE_STORAGE_KEY) || '', 10);
+  currentLevelIndex = clampLevelIndex(Number.isNaN(storedLevel) ? 0 : storedLevel);
+  bestScore = Number.isNaN(storedBest) ? 0 : Math.max(0, storedBest);
+}
+
+function saveProgress() {
+  safeSetLocalStorage(LEVEL_STORAGE_KEY, String(currentLevelIndex));
+  safeSetLocalStorage(BEST_SCORE_STORAGE_KEY, String(bestScore));
+}
+
+function hideLevelOverlay() {
+  if (!levelOverlayEl) return;
+  levelOverlayEl.classList.add('hidden');
+}
+
+function showLevelOverlay(win) {
+  if (!levelOverlayEl || !overlayTitleEl || !overlayBodyEl || !overlayActionBtn) return;
+
+  const level = LEVELS[currentLevelIndex];
+  const remaining = Math.max(0, level.moveLimit - moves);
+  levelOverlayEl.classList.remove('hidden');
+
+  if (win) {
+    overlayTitleEl.textContent = 'Level Complete';
+    overlayBodyEl.textContent = `Score ${score} reached target ${level.targetScore}. Moves left: ${remaining}.`;
+    overlayActionBtn.textContent = 'Next';
+  } else {
+    overlayTitleEl.textContent = 'Level Failed';
+    overlayBodyEl.textContent = `Score ${score} / ${level.targetScore}. Try again.`;
+    overlayActionBtn.textContent = 'Retry';
+  }
+}
+
+function evaluateTurnOutcome() {
+  const level = LEVELS[currentLevelIndex];
+  if (score >= level.targetScore) {
+    pendingOutcome = 'win';
+    return true;
+  }
+  if (moves >= level.moveLimit) {
+    pendingOutcome = 'lose';
+    return true;
+  }
+  return false;
+}
+
+function applyScoreProgress() {
+  if (score > bestScore) {
+    bestScore = score;
+    saveProgress();
+    updateHud();
+  }
+}
+
+function concludeLevelIfNeeded() {
+  if (!evaluateTurnOutcome()) {
+    return false;
+  }
+
+  isLocked = true;
+  applyScoreProgress();
+  showLevelOverlay(pendingOutcome === 'win');
+  return true;
 }
 
 function createSfxInstance(name) {
@@ -429,6 +526,7 @@ function removeMatches(matches) {
 
   score += removedCount * SCORE_PER_GEM;
   updateHud();
+  applyScoreProgress();
 }
 
 function dropAndFill() {
@@ -1076,6 +1174,9 @@ async function trySwap(from, to) {
     playSfx('swap');
     await resolveCascades(to, comboContext);
     selected = null;
+    if (concludeLevelIfNeeded()) {
+      return;
+    }
     isLocked = false;
     return;
   }
@@ -1109,6 +1210,9 @@ async function trySwap(from, to) {
   playSfx('swap');
   selected = null;
   await resolveCascades(to, null);
+  if (concludeLevelIfNeeded()) {
+    return;
+  }
   isLocked = false;
 }
 
@@ -1153,10 +1257,12 @@ function resetGame() {
   moves = 0;
   selected = null;
   isLocked = false;
+  pendingOutcome = null;
   generateBoardWithoutMatches();
   updateHud();
   renderBoard();
   clearFxLayer();
+  hideLevelOverlay();
   if (comboToastEl) {
     comboToastEl.classList.remove('show');
   }
@@ -1176,6 +1282,16 @@ if (audioBtn) {
     safeSetLocalStorage(AUDIO_STORAGE_KEY, audioEnabled ? '1' : '0');
   });
 }
+if (overlayActionBtn) {
+  overlayActionBtn.addEventListener('click', () => {
+    if (pendingOutcome === 'win') {
+      currentLevelIndex = (currentLevelIndex + 1) % LEVELS.length;
+      saveProgress();
+    }
+    resetGame();
+  });
+}
 
+loadProgress();
 loadAudioPreference();
 resetGame();
