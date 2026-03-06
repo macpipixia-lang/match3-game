@@ -701,6 +701,7 @@ function buildComboClearContext(from, to) {
     pulses: [],
     wrappedBlasts: [],
   };
+  const colorBombOverrides = new Map();
 
   if (isColorBomb(fromCandy) && isColorBomb(toCandy)) {
     for (let row = 0; row < BOARD_SIZE; row += 1) {
@@ -709,13 +710,15 @@ function buildComboClearContext(from, to) {
       }
     }
     fx.pulses.push({ row: from.row, col: from.col }, { row: to.row, col: to.col });
-    return { clearSet, fx };
+    return { clearSet, fx, colorBombOverrides };
   }
 
   if (hasColorBomb && otherCandy) {
     const bombKey = keyOf(colorBombCell.row, colorBombCell.col);
     clearSet.add(bombKey);
     fx.pulses.push({ row: colorBombCell.row, col: colorBombCell.col });
+    // When a color bomb is involved, it should clear the OTHER candy's color.
+    colorBombOverrides.set(bombKey, otherCandy.color);
 
     if (otherCandy.kind === 'striped') {
       const cells = collectCellsByColor(otherCandy.color, colorBombCell);
@@ -726,7 +729,7 @@ function buildComboClearContext(from, to) {
         board[cell.row][cell.col] = createStripedCandy(otherCandy.color, orientation);
         clearSet.add(keyOf(cell.row, cell.col));
       });
-      return { clearSet, fx };
+      return { clearSet, fx, colorBombOverrides };
     }
 
     if (otherCandy.kind === 'wrapped') {
@@ -739,14 +742,14 @@ function buildComboClearContext(from, to) {
       });
       // Simplification: converted wrapped candies trigger one wrapped explosion each.
       // Skipping their built-in second pulse keeps this combo readable/perf-safe on 8x8.
-      return { clearSet, fx, suppressWrappedSecondPulse: true };
+      return { clearSet, fx, colorBombOverrides, suppressWrappedSecondPulse: true };
     }
 
     const colorCells = collectColorCells(otherCandy.color);
     colorCells.forEach((cell) => {
       clearSet.add(keyOf(cell.row, cell.col));
     });
-    return { clearSet, fx };
+    return { clearSet, fx, colorBombOverrides };
   }
 
   const kinds = [fromCandy.kind, toCandy.kind].sort().join('+');
