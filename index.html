@@ -12,11 +12,13 @@
       <section class="hud">
         <div class="stat">Score: <span id="score">0</span></div>
         <div class="stat">Moves: <span id="moves">0</span></div>
+        <button id="audioBtn" type="button" aria-pressed="false">Sound: Off</button>
         <button id="resetBtn" type="button">Reset</button>
       </section>
       <div class="board-wrap" aria-label="Match-3 board">
         <section id="board" class="board" role="grid"></section>
         <div id="fx" class="fx" aria-hidden="true"></div>
+        <div id="comboToast" class="combo-toast" aria-live="polite"></div>
       </div>
       <p class="hint">Click one gem, then an adjacent gem to swap.</p>
     </main>

@@ -5,20 +5,36 @@ const GEM_TYPES = [0, 1, 2, 3, 4, 5];
 const CLEAR_DELAY_MS = 260;
 const DROP_DELAY_MS = 170;
 const WRAPPED_PULSE_DELAY_MS = 120;
+const TARGET_HIGHLIGHT_DELAY_MS = 120;
+const COMBO_WAVE_DELAY_MS = 90;
 const SCORE_PER_GEM = 10;
 const BIG_CLEAR_SHAKE_THRESHOLD = 8;
+const TARGET_HIGHLIGHT_THRESHOLD = 8;
+const AUDIO_STORAGE_KEY = 'match3.audioEnabled';
+const SFX_SOURCES = {
+  clear: 'assets/sfx/clear.mp3',
+  swap: 'assets/sfx/swap.mp3',
+  invalid: 'assets/sfx/invalid.mp3',
+  combo: 'assets/sfx/combo.mp3',
+};
 
 const boardEl = document.getElementById('board');
 const fxEl = document.getElementById('fx');
 const scoreEl = document.getElementById('score');
 const movesEl = document.getElementById('moves');
 const resetBtn = document.getElementById('resetBtn');
+const audioBtn = document.getElementById('audioBtn');
+const comboToastEl = document.getElementById('comboToast');
 
 let board = [];
 let selected = null;
 let score = 0;
 let moves = 0;
 let isLocked = false;
+let audioEnabled = false;
+let comboToastTimer = 0;
+const missingSfx = new Set();
+const sfxPool = new Map();
 
 function randGem() {
   return GEM_TYPES[Math.floor(Math.random() * GEM_TYPES.length)];
@@ -216,6 +232,73 @@ function wait(ms) {
   return new Promise((resolve) => {
     window.setTimeout(resolve, ms);
   });
+}
+
+function safeGetLocalStorage(key) {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeSetLocalStorage(key, value) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Ignore storage quota/privacy mode errors.
+  }
+}
+
+function updateAudioButton() {
+  if (!audioBtn) return;
+  audioBtn.setAttribute('aria-pressed', audioEnabled ? 'true' : 'false');
+  audioBtn.textContent = audioEnabled ? 'Sound: On' : 'Sound: Off';
+}
+
+function loadAudioPreference() {
+  audioEnabled = safeGetLocalStorage(AUDIO_STORAGE_KEY) === '1';
+  updateAudioButton();
+}
+
+function createSfxInstance(name) {
+  const src = SFX_SOURCES[name];
+  if (!src || missingSfx.has(name)) {
+    return null;
+  }
+
+  const audio = new Audio(src);
+  audio.preload = 'auto';
+  audio.addEventListener(
+    'error',
+    () => {
+      missingSfx.add(name);
+      sfxPool.delete(name);
+    },
+    { once: true },
+  );
+  sfxPool.set(name, audio);
+  return audio;
+}
+
+function playSfx(name) {
+  if (!audioEnabled) return;
+  if (missingSfx.has(name)) return;
+
+  const audio = sfxPool.get(name) || createSfxInstance(name);
+  if (!audio) return;
+
+  try {
+    audio.currentTime = 0;
+    const playResult = audio.play();
+    if (playResult && typeof playResult.catch === 'function') {
+      playResult.catch(() => {
+        // Browser may block autoplay until user gesture; ignore silently.
+      });
+    }
+  } catch {
+    // Missing files / blocked playback should not break gameplay.
+  }
 }
 
 function clearFxLayer() {
@@ -630,6 +713,59 @@ function collectCellsByColor(color, exclude = null) {
   return cells;
 }
 
+function splitIntoWaves(cells, waveCount) {
+  const waves = Array.from({ length: waveCount }, () => []);
+  cells.forEach((cell, index) => {
+    waves[index % waveCount].push(cell);
+  });
+  return waves.filter((wave) => wave.length > 0);
+}
+
+function comboWordFor(clearSize, cascadeDepth) {
+  if (clearSize >= 18 || cascadeDepth >= 4) {
+    return 'Divine';
+  }
+  if (clearSize >= 12 || cascadeDepth >= 3) {
+    return 'Delicious';
+  }
+  if (clearSize >= 8 || cascadeDepth >= 2) {
+    return 'Sweet';
+  }
+  return '';
+}
+
+function showComboToast(text) {
+  if (!comboToastEl || !text) return;
+  comboToastEl.textContent = text;
+  comboToastEl.classList.remove('show');
+  // Force restart of keyframes when combos happen back-to-back.
+  void comboToastEl.offsetWidth;
+  comboToastEl.classList.add('show');
+  if (comboToastTimer) {
+    window.clearTimeout(comboToastTimer);
+  }
+  comboToastTimer = window.setTimeout(() => {
+    comboToastEl.classList.remove('show');
+  }, 660);
+}
+
+async function animatePreClearTargeting(targetKeys) {
+  if (!targetKeys || targetKeys.size < TARGET_HIGHLIGHT_THRESHOLD) return;
+
+  const targetedEls = [];
+  targetKeys.forEach((key) => {
+    const { row, col } = parseKey(key);
+    const el = boardEl.querySelector(`[data-row="${row}"][data-col="${col}"]`);
+    if (!el) return;
+    el.classList.add('targeting');
+    targetedEls.push(el);
+  });
+
+  if (targetedEls.length === 0) return;
+  await wait(TARGET_HIGHLIGHT_DELAY_MS);
+  targetedEls.forEach((el) => el.classList.remove('targeting'));
+}
+
 function buildRowAndColumnSet(center) {
   const clearSet = new Set();
   for (let c = 0; c < BOARD_SIZE; c += 1) {
@@ -710,15 +846,14 @@ function buildComboClearContext(from, to) {
       }
     }
     fx.pulses.push({ row: from.row, col: from.col }, { row: to.row, col: to.col });
-    return { clearSet, fx, colorBombOverrides };
+    return { clearSet, fx, colorBombOverrides, preClearTargets: new Set(clearSet) };
   }
 
   if (hasColorBomb && otherCandy) {
     const bombKey = keyOf(colorBombCell.row, colorBombCell.col);
     clearSet.add(bombKey);
     fx.pulses.push({ row: colorBombCell.row, col: colorBombCell.col });
-    // When a color bomb is involved, it should clear the OTHER candy's color.
-    colorBombOverrides.set(bombKey, otherCandy.color);
+    const preClearTargets = new Set([bombKey]);
 
     if (otherCandy.kind === 'striped') {
       const cells = collectCellsByColor(otherCandy.color, colorBombCell);
@@ -727,9 +862,14 @@ function buildComboClearContext(from, to) {
         if (!current || current.kind === 'colorBomb') return;
         const orientation = index % 2 === 0 ? 'row' : 'col';
         board[cell.row][cell.col] = createStripedCandy(otherCandy.color, orientation);
-        clearSet.add(keyOf(cell.row, cell.col));
+        preClearTargets.add(keyOf(cell.row, cell.col));
       });
-      return { clearSet, fx, colorBombOverrides };
+      colorBombOverrides.set(bombKey, null);
+      const waveCount = cells.length >= 12 ? 3 : 2;
+      const comboWaves = splitIntoWaves(cells, waveCount).map(
+        (wave) => new Set(wave.map((cell) => keyOf(cell.row, cell.col))),
+      );
+      return { clearSet, fx, colorBombOverrides, comboWaves, preClearTargets };
     }
 
     if (otherCandy.kind === 'wrapped') {
@@ -738,18 +878,32 @@ function buildComboClearContext(from, to) {
         const current = board[cell.row][cell.col];
         if (!current || current.kind === 'colorBomb') return;
         board[cell.row][cell.col] = createWrappedCandy(otherCandy.color);
-        clearSet.add(keyOf(cell.row, cell.col));
+        preClearTargets.add(keyOf(cell.row, cell.col));
       });
-      // Simplification: converted wrapped candies trigger one wrapped explosion each.
-      // Skipping their built-in second pulse keeps this combo readable/perf-safe on 8x8.
-      return { clearSet, fx, colorBombOverrides, suppressWrappedSecondPulse: true };
+      colorBombOverrides.set(bombKey, null);
+      const waveCount = cells.length >= 12 ? 3 : 2;
+      const comboWaves = splitIntoWaves(cells, waveCount).map(
+        (wave) => new Set(wave.map((cell) => keyOf(cell.row, cell.col))),
+      );
+      // Converted wrapped candies already create broad area clears in each wave.
+      return {
+        clearSet,
+        fx,
+        colorBombOverrides,
+        comboWaves,
+        preClearTargets,
+        suppressWaveWrappedSecondPulse: true,
+      };
     }
 
+    // When a color bomb is involved, it should clear the OTHER candy's color.
+    colorBombOverrides.set(bombKey, otherCandy.color);
     const colorCells = collectColorCells(otherCandy.color);
     colorCells.forEach((cell) => {
       clearSet.add(keyOf(cell.row, cell.col));
+      preClearTargets.add(keyOf(cell.row, cell.col));
     });
-    return { clearSet, fx, colorBombOverrides };
+    return { clearSet, fx, colorBombOverrides, preClearTargets };
   }
 
   const kinds = [fromCandy.kind, toCandy.kind].sort().join('+');
@@ -800,6 +954,52 @@ function buildComboClearContext(from, to) {
 async function resolveCascades(preferredSpawnCell, initialForcedContext = null) {
   let preferred = preferredSpawnCell;
   let forcedContext = initialForcedContext;
+  let cascadeDepth = 0;
+
+  async function runPulse(initialSet, options = {}) {
+    const pulseContext = expandClearSet(initialSet, options.protectedCells || new Set(), options.colorBombOverrides || new Map());
+    const pulseSet = pulseContext.clearSet;
+    if (pulseSet.size === 0) {
+      return 0;
+    }
+
+    const targetKeys = options.preClearTargets || pulseSet;
+    await animatePreClearTargeting(targetKeys);
+
+    cascadeDepth += 1;
+    const comboWord = comboWordFor(pulseSet.size, cascadeDepth);
+    if (comboWord) {
+      showComboToast(comboWord);
+      playSfx('combo');
+    }
+
+    await animateClear(pulseSet, options.fx || null);
+    playSfx('clear');
+    removeMatches(pulseSet);
+
+    const secondInitial = new Set(options.secondPulseInitial || []);
+    if (!options.suppressWrappedSecondPulse) {
+      pulseContext.wrappedCenters.forEach((centerKey) => {
+        const { row, col } = parseKey(centerKey);
+        for (let dr = -1; dr <= 1; dr += 1) {
+          for (let dc = -1; dc <= 1; dc += 1) {
+            secondInitial.add(keyOf(row + dr, col + dc));
+          }
+        }
+      });
+    }
+    if (secondInitial.size > 0) {
+      await wait(WRAPPED_PULSE_DELAY_MS);
+      const secondContext = expandClearSet(secondInitial);
+      if (secondContext.clearSet.size > 0) {
+        await animateClear(secondContext.clearSet, options.secondPulseFx || null);
+        playSfx('clear');
+        removeMatches(secondContext.clearSet);
+      }
+    }
+
+    return pulseSet.size;
+  }
 
   while (true) {
     let clearContext;
@@ -813,6 +1013,9 @@ async function resolveCascades(preferredSpawnCell, initialForcedContext = null) 
       clearContext.secondPulseInitial = forcedContext.secondPulseInitial || null;
       clearContext.secondPulseFx = forcedContext.secondPulseFx || null;
       clearContext.suppressWrappedSecondPulse = Boolean(forcedContext.suppressWrappedSecondPulse);
+      clearContext.preClearTargets = forcedContext.preClearTargets || null;
+      clearContext.comboWaves = forcedContext.comboWaves || null;
+      clearContext.suppressWaveWrappedSecondPulse = Boolean(forcedContext.suppressWaveWrappedSecondPulse);
       forcedContext = null;
     } else {
       const { matched } = findMatches();
@@ -830,38 +1033,27 @@ async function resolveCascades(preferredSpawnCell, initialForcedContext = null) 
       clearContext.secondPulseInitial = null;
       clearContext.secondPulseFx = null;
       clearContext.suppressWrappedSecondPulse = false;
+      clearContext.preClearTargets = null;
+      clearContext.comboWaves = null;
+      clearContext.suppressWaveWrappedSecondPulse = false;
     }
 
     const clearSet = clearContext.clearSet;
-    const wrappedCenters = clearContext.wrappedCenters;
 
     if (clearSet.size === 0) {
       break;
     }
 
-    // Pulse 1
-    await animateClear(clearSet, clearContext.fx);
-    removeMatches(clearSet);
+    await runPulse(clearSet, clearContext);
 
-    // Pulse 2 for wrapped candies (before gravity), Candy-Crush-ish.
-    const secondInitial = new Set(clearContext.secondPulseInitial || []);
-    if (!clearContext.suppressWrappedSecondPulse) {
-      wrappedCenters.forEach((centerKey) => {
-        const { row, col } = parseKey(centerKey);
-        for (let dr = -1; dr <= 1; dr += 1) {
-          for (let dc = -1; dc <= 1; dc += 1) {
-            secondInitial.add(keyOf(row + dr, col + dc));
-          }
-        }
-      });
-    }
-    if (secondInitial.size > 0) {
-      await wait(WRAPPED_PULSE_DELAY_MS);
-      const secondContext = expandClearSet(secondInitial);
-      const secondSet = secondContext.clearSet;
-      if (secondSet.size > 0) {
-        await animateClear(secondSet, clearContext.secondPulseFx || null);
-        removeMatches(secondSet);
+    if (clearContext.comboWaves && clearContext.comboWaves.length > 0) {
+      for (const waveInitial of clearContext.comboWaves) {
+        if (!waveInitial || waveInitial.size === 0) continue;
+        await wait(COMBO_WAVE_DELAY_MS);
+        await runPulse(waveInitial, {
+          preClearTargets: new Set(waveInitial),
+          suppressWrappedSecondPulse: clearContext.suppressWaveWrappedSecondPulse,
+        });
       }
     }
 
@@ -881,6 +1073,7 @@ async function trySwap(from, to) {
   if (comboContext) {
     moves += 1;
     updateHud();
+    playSfx('swap');
     await resolveCascades(to, comboContext);
     selected = null;
     isLocked = false;
@@ -904,6 +1097,7 @@ async function trySwap(from, to) {
     if (b) {
       b.classList.add('invalid');
     }
+    playSfx('invalid');
 
     await wait(220);
     isLocked = false;
@@ -912,6 +1106,7 @@ async function trySwap(from, to) {
 
   moves += 1;
   updateHud();
+  playSfx('swap');
   selected = null;
   await resolveCascades(to, null);
   isLocked = false;
@@ -962,6 +1157,9 @@ function resetGame() {
   updateHud();
   renderBoard();
   clearFxLayer();
+  if (comboToastEl) {
+    comboToastEl.classList.remove('show');
+  }
 }
 
 boardEl.addEventListener('click', (event) => {
@@ -971,5 +1169,13 @@ boardEl.addEventListener('click', (event) => {
 });
 
 resetBtn.addEventListener('click', resetGame);
+if (audioBtn) {
+  audioBtn.addEventListener('click', () => {
+    audioEnabled = !audioEnabled;
+    updateAudioButton();
+    safeSetLocalStorage(AUDIO_STORAGE_KEY, audioEnabled ? '1' : '0');
+  });
+}
 
+loadAudioPreference();
 resetGame();

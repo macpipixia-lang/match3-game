@@ -53,5 +53,7 @@ A simple match-3 (消消乐) game built with vanilla HTML/CSS/JS. Works fully of
 ## 资源 / Assets
 
 - 糖果图片使用本地 SVG：`assets/`（无外链、无下载）。
+- 音效为可选占位：HUD 提供 Sound 开关；若放入 `assets/sfx/*.mp3`（如 `clear.mp3` / `swap.mp3` / `invalid.mp3` / `combo.mp3`）会自动尝试播放，缺失文件时会静默跳过。
 
 Candy pieces are local SVGs in `assets/` (no external downloads).
+- SFX is optional placeholder wiring: the HUD includes a Sound toggle. If `assets/sfx/*.mp3` files exist (`clear.mp3`, `swap.mp3`, `invalid.mp3`, `combo.mp3`), the game will try to play them; missing files are skipped gracefully.
