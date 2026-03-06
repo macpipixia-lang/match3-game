@@ -70,6 +70,10 @@ function isColorBomb(candy) {
   return Boolean(candy && candy.kind === 'colorBomb');
 }
 
+function isSpecialCandy(candy) {
+  return Boolean(candy && candy.kind !== 'normal');
+}
+
 function getMatchColor(candy) {
   return candy ? candy.color : null;
 }
@@ -281,13 +285,13 @@ function addWrappedBlastFx(row, col) {
   fxEl.appendChild(blast);
 }
 
-function spawnFxForClearSet(matches) {
+function spawnFxForClearSet(matches, fxOverrides = null) {
   clearFxLayer();
 
-  const rowBeams = new Set();
-  const colBeams = new Set();
-  const pulses = [];
-  const wrappedBlasts = [];
+  const rowBeams = new Set(fxOverrides?.rowBeams || []);
+  const colBeams = new Set(fxOverrides?.colBeams || []);
+  const pulses = [...(fxOverrides?.pulses || [])];
+  const wrappedBlasts = [...(fxOverrides?.wrappedBlasts || [])];
 
   matches.forEach((key) => {
     const { row, col } = parseKey(key);
@@ -310,12 +314,12 @@ function spawnFxForClearSet(matches) {
   wrappedBlasts.forEach((p) => addWrappedBlastFx(p.row, p.col));
 }
 
-async function animateClear(matches) {
+async function animateClear(matches, fxOverrides = null) {
   if (matches.size >= BIG_CLEAR_SHAKE_THRESHOLD) {
     boardEl.classList.add('board-shake');
   }
 
-  spawnFxForClearSet(matches);
+  spawnFxForClearSet(matches, fxOverrides);
 
   matches.forEach((key) => {
     const { row, col } = parseKey(key);
@@ -612,45 +616,182 @@ function applySpawnPlans(spawnPlans) {
   });
 }
 
-function buildColorBombSwapContext(from, to) {
+function collectCellsByColor(color, exclude = null) {
+  const cells = [];
+  for (let row = 0; row < BOARD_SIZE; row += 1) {
+    for (let col = 0; col < BOARD_SIZE; col += 1) {
+      if (exclude && exclude.row === row && exclude.col === col) continue;
+      const candy = board[row][col];
+      if (candy && candy.color === color) {
+        cells.push({ row, col });
+      }
+    }
+  }
+  return cells;
+}
+
+function buildRowAndColumnSet(center) {
+  const clearSet = new Set();
+  for (let c = 0; c < BOARD_SIZE; c += 1) {
+    clearSet.add(keyOf(center.row, c));
+  }
+  for (let r = 0; r < BOARD_SIZE; r += 1) {
+    clearSet.add(keyOf(r, center.col));
+  }
+  return clearSet;
+}
+
+function buildTripleCrossSet(center) {
+  const clearSet = new Set();
+  for (let dr = -1; dr <= 1; dr += 1) {
+    const row = center.row + dr;
+    if (inBounds(row, center.col)) {
+      for (let c = 0; c < BOARD_SIZE; c += 1) {
+        clearSet.add(keyOf(row, c));
+      }
+    }
+  }
+  for (let dc = -1; dc <= 1; dc += 1) {
+    const col = center.col + dc;
+    if (inBounds(center.row, col)) {
+      for (let r = 0; r < BOARD_SIZE; r += 1) {
+        clearSet.add(keyOf(r, col));
+      }
+    }
+  }
+  return clearSet;
+}
+
+function buildSquareSet(center, radius) {
+  const clearSet = new Set();
+  for (let dr = -radius; dr <= radius; dr += 1) {
+    for (let dc = -radius; dc <= radius; dc += 1) {
+      const row = center.row + dr;
+      const col = center.col + dc;
+      if (inBounds(row, col)) {
+        clearSet.add(keyOf(row, col));
+      }
+    }
+  }
+  return clearSet;
+}
+
+function buildComboClearContext(from, to) {
   const fromCandy = board[from.row][from.col];
   const toCandy = board[to.row][to.col];
 
-  const clearSet = new Set();
-  const colorBombOverrides = new Map();
-
   if (!fromCandy || !toCandy) {
-    return { clearSet, colorBombOverrides };
+    return null;
   }
+
+  const hasColorBomb = isColorBomb(fromCandy) || isColorBomb(toCandy);
+  const bothSpecial = isSpecialCandy(fromCandy) && isSpecialCandy(toCandy);
+  if (!hasColorBomb && !bothSpecial) {
+    return null;
+  }
+
+  const center = to;
+  const clearSet = new Set();
+  const colorBombCell = isColorBomb(fromCandy) ? from : isColorBomb(toCandy) ? to : null;
+  const otherCell = colorBombCell && colorBombCell.row === from.row && colorBombCell.col === from.col ? to : from;
+  const otherCandy = colorBombCell ? board[otherCell.row][otherCell.col] : null;
+  const fx = {
+    rowBeams: [],
+    colBeams: [],
+    pulses: [],
+    wrappedBlasts: [],
+  };
 
   if (isColorBomb(fromCandy) && isColorBomb(toCandy)) {
     for (let row = 0; row < BOARD_SIZE; row += 1) {
       for (let col = 0; col < BOARD_SIZE; col += 1) {
-        if (board[row][col]) {
-          clearSet.add(keyOf(row, col));
-        }
+        if (board[row][col]) clearSet.add(keyOf(row, col));
       }
     }
-    return { clearSet, colorBombOverrides };
+    fx.pulses.push({ row: from.row, col: from.col }, { row: to.row, col: to.col });
+    return { clearSet, fx };
   }
 
-  const bombCell = isColorBomb(fromCandy) ? from : to;
-  const otherCandy = isColorBomb(fromCandy) ? toCandy : fromCandy;
+  if (hasColorBomb && otherCandy) {
+    const bombKey = keyOf(colorBombCell.row, colorBombCell.col);
+    clearSet.add(bombKey);
+    fx.pulses.push({ row: colorBombCell.row, col: colorBombCell.col });
 
-  const bombKey = keyOf(bombCell.row, bombCell.col);
-  clearSet.add(bombKey);
+    if (otherCandy.kind === 'striped') {
+      const cells = collectCellsByColor(otherCandy.color, colorBombCell);
+      cells.forEach((cell, index) => {
+        const current = board[cell.row][cell.col];
+        if (!current || current.kind === 'colorBomb') return;
+        const orientation = index % 2 === 0 ? 'row' : 'col';
+        board[cell.row][cell.col] = createStripedCandy(otherCandy.color, orientation);
+        clearSet.add(keyOf(cell.row, cell.col));
+      });
+      return { clearSet, fx };
+    }
 
-  if (!otherCandy) {
-    return { clearSet, colorBombOverrides };
+    if (otherCandy.kind === 'wrapped') {
+      const cells = collectCellsByColor(otherCandy.color, colorBombCell);
+      cells.forEach((cell) => {
+        const current = board[cell.row][cell.col];
+        if (!current || current.kind === 'colorBomb') return;
+        board[cell.row][cell.col] = createWrappedCandy(otherCandy.color);
+        clearSet.add(keyOf(cell.row, cell.col));
+      });
+      // Simplification: converted wrapped candies trigger one wrapped explosion each.
+      // Skipping their built-in second pulse keeps this combo readable/perf-safe on 8x8.
+      return { clearSet, fx, suppressWrappedSecondPulse: true };
+    }
+
+    const colorCells = collectColorCells(otherCandy.color);
+    colorCells.forEach((cell) => {
+      clearSet.add(keyOf(cell.row, cell.col));
+    });
+    return { clearSet, fx };
   }
-  colorBombOverrides.set(bombKey, otherCandy.color);
 
-  const colorCells = collectColorCells(otherCandy.color);
-  colorCells.forEach((cell) => {
-    clearSet.add(keyOf(cell.row, cell.col));
-  });
+  const kinds = [fromCandy.kind, toCandy.kind].sort().join('+');
 
-  return { clearSet, colorBombOverrides };
+  if (kinds === 'striped+striped') {
+    const cross = buildRowAndColumnSet(center);
+    cross.forEach((key) => clearSet.add(key));
+    fx.rowBeams.push(center.row);
+    fx.colBeams.push(center.col);
+    return { clearSet, fx };
+  }
+
+  if (kinds === 'striped+wrapped') {
+    const cross = buildTripleCrossSet(center);
+    cross.forEach((key) => clearSet.add(key));
+    for (let dr = -1; dr <= 1; dr += 1) {
+      const row = center.row + dr;
+      if (row >= 0 && row < BOARD_SIZE) fx.rowBeams.push(row);
+    }
+    for (let dc = -1; dc <= 1; dc += 1) {
+      const col = center.col + dc;
+      if (col >= 0 && col < BOARD_SIZE) fx.colBeams.push(col);
+    }
+    fx.wrappedBlasts.push({ row: center.row, col: center.col });
+    return { clearSet, fx };
+  }
+
+  if (kinds === 'wrapped+wrapped') {
+    const area = buildSquareSet(center, 2);
+    const secondArea = buildSquareSet(center, 3);
+    area.forEach((key) => clearSet.add(key));
+    fx.wrappedBlasts.push({ row: center.row, col: center.col });
+    fx.pulses.push({ row: center.row, col: center.col });
+    return {
+      clearSet,
+      fx,
+      secondPulseInitial: secondArea,
+      secondPulseFx: {
+        wrappedBlasts: [{ row: center.row, col: center.col }],
+        pulses: [{ row: center.row, col: center.col }],
+      },
+    };
+  }
+
+  return null;
 }
 
 async function resolveCascades(preferredSpawnCell, initialForcedContext = null) {
@@ -665,6 +806,10 @@ async function resolveCascades(preferredSpawnCell, initialForcedContext = null) 
       const forcedClear = forcedContext.clearSet || new Set();
       const forcedOverrides = forcedContext.colorBombOverrides || new Map();
       clearContext = expandClearSet(forcedClear, new Set(), forcedOverrides);
+      clearContext.fx = forcedContext.fx || null;
+      clearContext.secondPulseInitial = forcedContext.secondPulseInitial || null;
+      clearContext.secondPulseFx = forcedContext.secondPulseFx || null;
+      clearContext.suppressWrappedSecondPulse = Boolean(forcedContext.suppressWrappedSecondPulse);
       forcedContext = null;
     } else {
       const { matched } = findMatches();
@@ -678,6 +823,10 @@ async function resolveCascades(preferredSpawnCell, initialForcedContext = null) 
       const protectedCells = new Set(spawnPlans.keys());
       const baseClear = new Set([...matched].filter((key) => !protectedCells.has(key)));
       clearContext = expandClearSet(baseClear, protectedCells);
+      clearContext.fx = null;
+      clearContext.secondPulseInitial = null;
+      clearContext.secondPulseFx = null;
+      clearContext.suppressWrappedSecondPulse = false;
     }
 
     const clearSet = clearContext.clearSet;
@@ -688,13 +837,12 @@ async function resolveCascades(preferredSpawnCell, initialForcedContext = null) 
     }
 
     // Pulse 1
-    await animateClear(clearSet);
+    await animateClear(clearSet, clearContext.fx);
     removeMatches(clearSet);
 
     // Pulse 2 for wrapped candies (before gravity), Candy-Crush-ish.
-    if (wrappedCenters.size > 0) {
-      await wait(WRAPPED_PULSE_DELAY_MS);
-      const secondInitial = new Set();
+    const secondInitial = new Set(clearContext.secondPulseInitial || []);
+    if (!clearContext.suppressWrappedSecondPulse) {
       wrappedCenters.forEach((centerKey) => {
         const { row, col } = parseKey(centerKey);
         for (let dr = -1; dr <= 1; dr += 1) {
@@ -703,10 +851,13 @@ async function resolveCascades(preferredSpawnCell, initialForcedContext = null) 
           }
         }
       });
+    }
+    if (secondInitial.size > 0) {
+      await wait(WRAPPED_PULSE_DELAY_MS);
       const secondContext = expandClearSet(secondInitial);
       const secondSet = secondContext.clearSet;
       if (secondSet.size > 0) {
-        await animateClear(secondSet);
+        await animateClear(secondSet, clearContext.secondPulseFx || null);
         removeMatches(secondSet);
       }
     }
@@ -723,15 +874,11 @@ async function trySwap(from, to) {
   swapCells(from, to);
   renderBoard();
 
-  const fromCandy = board[from.row][from.col];
-  const toCandy = board[to.row][to.col];
-  const swappedWithColorBomb = isColorBomb(fromCandy) || isColorBomb(toCandy);
-
-  if (swappedWithColorBomb) {
+  const comboContext = buildComboClearContext(from, to);
+  if (comboContext) {
     moves += 1;
     updateHud();
-    const forcedContext = buildColorBombSwapContext(from, to);
-    await resolveCascades(to, forcedContext);
+    await resolveCascades(to, comboContext);
     selected = null;
     isLocked = false;
     return;
