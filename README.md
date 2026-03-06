@@ -25,6 +25,13 @@ A simple match-3 (消消乐) game built with vanilla HTML/CSS/JS. Works fully of
   - 触发时以自身为中心 **3x3 爆炸两次**。
 - **五连及以上（直线 5+）**：生成 **彩虹炸弹（Color Bomb）**。
   - 彩虹炸弹与任意糖果交换：清除全盘该颜色（包含同色特殊糖）。
+- **连携交换 / Combo Swaps**
+  - 彩虹炸弹 + 彩虹炸弹：清空全盘。
+  - 彩虹炸弹 + 条纹糖：将目标颜色全部转为条纹糖并立即触发。
+  - 彩虹炸弹 + 包装糖：将目标颜色全部转为包装糖并触发（为保证流畅度，做了轻量化脉冲处理）。
+  - 条纹糖 + 条纹糖：在交换点清一整行 + 一整列。
+  - 条纹糖 + 包装糖：在交换点形成更强十字清除（中心 3 行 + 3 列）。
+  - 包装糖 + 包装糖：在交换点触发更大的多段爆炸（5x5）。
 
 - **Match exactly 4 in a line**: creates a **striped candy**.
   - Horizontal 4-match → **vertical-striped** candy (clears a column when activated)
@@ -33,6 +40,13 @@ A simple match-3 (消消乐) game built with vanilla HTML/CSS/JS. Works fully of
   - When activated, it explodes twice in a 3x3 area.
 - **Match 5+ in a straight line**: creates a **Color Bomb**.
   - Swap the Color Bomb with any candy to clear all candies of that color (including specials).
+- **Combo Swaps**
+  - Color Bomb + Color Bomb: clears the entire board.
+  - Color Bomb + Striped: converts all candies of that color into striped candies, then activates them.
+  - Color Bomb + Wrapped: converts all candies of that color into wrapped candies, then activates them (with a lighter pulse handling for smoother performance).
+  - Striped + Striped: clears one full row and one full column at the swap center.
+  - Striped + Wrapped: clears a stronger cross (3 centered rows + 3 centered columns).
+  - Wrapped + Wrapped: triggers a larger multi-stage blast (5x5).
 
 ---
 
