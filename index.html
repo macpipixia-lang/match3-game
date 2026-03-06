@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Match-3 (消消乐)</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="app">
+      <h1>Match-3 消消乐</h1>
+      <section class="hud">
+        <div class="stat">Score: <span id="score">0</span></div>
+        <div class="stat">Moves: <span id="moves">0</span></div>
+        <button id="resetBtn" type="button">Reset</button>
+      </section>
+      <div class="board-wrap" aria-label="Match-3 board">
+        <section id="board" class="board" role="grid"></section>
+        <div id="fx" class="fx" aria-hidden="true"></div>
+      </div>
+      <p class="hint">Click one gem, then an adjacent gem to swap.</p>
+    </main>
+
+    <script src="main.js"></script>
+  </body>
+</html>

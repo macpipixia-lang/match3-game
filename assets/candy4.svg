@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <radialGradient id="g" cx="40%" cy="30%" r="70%">
+      <stop offset="0" stop-color="#f5d0fe"/>
+      <stop offset="1" stop-color="#a855f7"/>
+    </radialGradient>
+  </defs>
+  <!-- Gummy bear-ish blob -->
+  <path d="M44 30c0-8 6-14 14-14h2c8 0 14 6 14 14v4c6-2 14 4 14 12v40c0 16-14 28-30 28S34 102 34 86V46c0-8 8-14 14-12v-4z" fill="url(#g)"/>
+  <circle cx="54" cy="52" r="6" fill="#0f172a" opacity="0.75"/>
+  <circle cx="74" cy="52" r="6" fill="#0f172a" opacity="0.75"/>
+  <path d="M54 72c8 10 12 10 20 0" fill="none" stroke="#0f172a" stroke-opacity="0.55" stroke-width="8" stroke-linecap="round"/>
+  <path d="M44 44c10-10 30-10 40 0" fill="none" stroke="#fff" stroke-opacity="0.45" stroke-width="10" stroke-linecap="round"/>
+</svg>

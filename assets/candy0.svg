@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <radialGradient id="g" cx="35%" cy="30%" r="70%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.9"/>
+      <stop offset="0.25" stop-color="#ffb4b4"/>
+      <stop offset="1" stop-color="#ef4444"/>
+    </radialGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="none"/>
+  <!-- Lollipop -->
+  <circle cx="64" cy="54" r="36" fill="url(#g)"/>
+  <circle cx="64" cy="54" r="28" fill="none" stroke="#fff" stroke-opacity="0.65" stroke-width="8"/>
+  <circle cx="64" cy="54" r="16" fill="none" stroke="#fff" stroke-opacity="0.55" stroke-width="6"/>
+  <path d="M70 88 L92 118" stroke="#f8fafc" stroke-width="10" stroke-linecap="round"/>
+  <path d="M72 92 L90 120" stroke="#94a3b8" stroke-opacity="0.55" stroke-width="4" stroke-linecap="round"/>
+</svg>
