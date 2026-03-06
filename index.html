@@ -10,14 +10,26 @@
     <main class="app">
       <h1>Match-3 消消乐</h1>
       <section class="hud">
+        <div class="stat">Level: <span id="level">1</span></div>
         <div class="stat">Score: <span id="score">0</span></div>
-        <div class="stat">Moves: <span id="moves">0</span></div>
+        <div class="stat">Target: <span id="targetScore">0</span></div>
+        <div class="stat">Best: <span id="bestScore">0</span></div>
+        <div class="stat">Moves: <span id="moves">0</span>/<span id="moveLimit">0</span></div>
+        <button id="audioBtn" type="button" aria-pressed="false">Sound: Off</button>
         <button id="resetBtn" type="button">Reset</button>
       </section>
       <div class="board-wrap" aria-label="Match-3 board">
         <section id="board" class="board" role="grid"></section>
         <div id="fx" class="fx" aria-hidden="true"></div>
+        <div id="comboToast" class="combo-toast" aria-live="polite"></div>
       </div>
+      <section id="levelOverlay" class="level-overlay hidden" role="dialog" aria-modal="true" aria-live="polite">
+        <div class="level-card">
+          <h2 id="overlayTitle">Level Complete</h2>
+          <p id="overlayBody">Ready for next level.</p>
+          <button id="overlayActionBtn" type="button">Next</button>
+        </div>
+      </section>
       <p class="hint">Click one gem, then an adjacent gem to swap.</p>
     </main>
 
