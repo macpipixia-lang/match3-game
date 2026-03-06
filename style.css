@@ -80,11 +80,35 @@ h1 {
   height: var(--cell-size);
   border-radius: 14px;
   border: 2px solid rgb(255 255 255 / 20%);
-  background: var(--gem-color);
-  box-shadow: inset 0 8px 12px rgb(255 255 255 / 18%), inset 0 -8px 12px rgb(0 0 0 / 25%);
-  transition: transform 140ms ease, opacity 140ms ease;
+  background: rgb(255 255 255 / 6%);
+  box-shadow:
+    inset 0 8px 12px rgb(255 255 255 / 14%),
+    inset 0 -8px 12px rgb(0 0 0 / 25%),
+    0 10px 20px rgb(0 0 0 / 22%);
+  transition: transform 140ms ease, opacity 140ms ease, filter 140ms ease;
   cursor: pointer;
+  display: grid;
+  place-items: center;
+  padding: 0;
 }
+
+.gem::before {
+  content: '';
+  width: 86%;
+  height: 86%;
+  background-image: var(--gem-image);
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  filter: drop-shadow(0 8px 10px rgb(0 0 0 / 22%));
+}
+
+.gem--0 { --gem-image: url('assets/candy0.svg'); }
+.gem--1 { --gem-image: url('assets/candy1.svg'); }
+.gem--2 { --gem-image: url('assets/candy2.svg'); }
+.gem--3 { --gem-image: url('assets/candy3.svg'); }
+.gem--4 { --gem-image: url('assets/candy4.svg'); }
+.gem--5 { --gem-image: url('assets/candy5.svg'); }
 
 .gem.selected {
   outline: 3px solid #fff;

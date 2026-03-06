@@ -1,7 +1,8 @@
 'use strict';
 
 const BOARD_SIZE = 8;
-const GEM_TYPES = ['#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#a855f7', '#ec4899'];
+// Candy types (also mapped to CSS classes gem--0..gem--5)
+const GEM_TYPES = [0, 1, 2, 3, 4, 5];
 const CLEAR_DELAY_MS = 220;
 const DROP_DELAY_MS = 180;
 const SCORE_PER_GEM = 10;
@@ -18,7 +19,7 @@ let moves = 0;
 let isLocked = false;
 
 function randGem() {
-  return Math.floor(Math.random() * GEM_TYPES.length);
+  return GEM_TYPES[Math.floor(Math.random() * GEM_TYPES.length)];
 }
 
 function isAdjacent(a, b) {
@@ -70,7 +71,7 @@ function renderBoard() {
   for (let row = 0; row < BOARD_SIZE; row += 1) {
     for (let col = 0; col < BOARD_SIZE; col += 1) {
       const gem = board[row][col];
-      html += `<button class="${gemClasses(row, col)}" data-row="${row}" data-col="${col}" style="--gem-color:${GEM_TYPES[gem]}" aria-label="Gem at row ${row + 1}, col ${col + 1}"></button>`;
+      html += `<button class="${gemClasses(row, col)} gem--${gem}" data-row="${row}" data-col="${col}" aria-label="Candy at row ${row + 1}, col ${col + 1}"></button>`;
     }
   }
   boardEl.innerHTML = html;
