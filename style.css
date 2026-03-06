@@ -62,8 +62,13 @@ h1 {
   filter: brightness(1.06);
 }
 
-.board {
+.board-wrap {
+  position: relative;
+  width: max-content;
   margin-inline: auto;
+}
+
+.board {
   display: grid;
   grid-template-columns: repeat(8, var(--cell-size));
   grid-template-rows: repeat(8, var(--cell-size));
@@ -73,6 +78,14 @@ h1 {
   border: 1px solid rgb(229 231 235 / 18%);
   border-radius: 12px;
   padding: 10px;
+}
+
+.fx {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  border-radius: 12px;
 }
 
 .board.board-shake {
@@ -267,6 +280,65 @@ h1 {
   }
   75% {
     transform: translateX(3px);
+  }
+}
+
+/* Candy-Crush-ish FX */
+.fx .beam {
+  position: absolute;
+  border-radius: 999px;
+  opacity: 0;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.95), transparent);
+  filter: drop-shadow(0 0 12px rgb(255 255 255 / 0.35)) drop-shadow(0 0 20px rgb(251 191 36 / 0.35));
+  animation: beam-pop 420ms ease-out forwards;
+}
+
+.fx .beam.row {
+  height: calc(var(--cell-size) * 0.7);
+}
+
+.fx .beam.col {
+  width: calc(var(--cell-size) * 0.7);
+  background: linear-gradient(180deg, transparent, rgb(255 255 255 / 0.95), transparent);
+}
+
+@keyframes beam-pop {
+  0% {
+    transform: scale(0.85);
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.08);
+    opacity: 0;
+  }
+}
+
+.fx .pulse {
+  position: absolute;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle, rgb(255 255 255 / 0.8), rgb(255 255 255 / 0) 60%),
+    conic-gradient(#f43f5e, #f59e0b, #eab308, #22c55e, #06b6d4, #3b82f6, #a855f7, #f43f5e);
+  mix-blend-mode: screen;
+  filter: blur(0.2px) drop-shadow(0 0 18px rgb(255 255 255 / 0.35));
+  animation: pulse-burst 520ms ease-out forwards;
+  opacity: 0;
+}
+
+@keyframes pulse-burst {
+  0% {
+    transform: scale(0.2);
+    opacity: 0;
+  }
+  18% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
   }
 }
 

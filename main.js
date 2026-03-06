@@ -8,6 +8,7 @@ const SCORE_PER_GEM = 10;
 const BIG_CLEAR_SHAKE_THRESHOLD = 8;
 
 const boardEl = document.getElementById('board');
+const fxEl = document.getElementById('fx');
 const scoreEl = document.getElementById('score');
 const movesEl = document.getElementById('moves');
 const resetBtn = document.getElementById('resetBtn');
@@ -202,10 +203,88 @@ function wait(ms) {
   });
 }
 
+function clearFxLayer() {
+  if (!fxEl) return;
+  fxEl.innerHTML = '';
+}
+
+function addBeamFx(kind, row, col) {
+  if (!fxEl) return;
+  const cell = boardEl.querySelector(`[data-row="${row}"][data-col="${col}"]`);
+  if (!cell) return;
+
+  const boardRect = boardEl.getBoundingClientRect();
+  const cellRect = cell.getBoundingClientRect();
+
+  const beam = document.createElement('div');
+  beam.className = `beam ${kind}`;
+
+  if (kind === 'row') {
+    beam.style.left = '10px';
+    beam.style.right = '10px';
+    beam.style.top = `${cellRect.top - boardRect.top + cellRect.height * 0.15}px`;
+  } else {
+    beam.style.top = '10px';
+    beam.style.bottom = '10px';
+    beam.style.left = `${cellRect.left - boardRect.left + cellRect.width * 0.15}px`;
+  }
+
+  fxEl.appendChild(beam);
+}
+
+function addPulseFx(row, col) {
+  if (!fxEl) return;
+  const cell = boardEl.querySelector(`[data-row="${row}"][data-col="${col}"]`);
+  if (!cell) return;
+
+  const boardRect = boardEl.getBoundingClientRect();
+  const cellRect = cell.getBoundingClientRect();
+
+  const pulse = document.createElement('div');
+  pulse.className = 'pulse';
+  const size = Math.max(cellRect.width, cellRect.height) * 1.2;
+  pulse.style.width = `${size}px`;
+  pulse.style.height = `${size}px`;
+  pulse.style.left = `${cellRect.left - boardRect.left + cellRect.width / 2 - size / 2}px`;
+  pulse.style.top = `${cellRect.top - boardRect.top + cellRect.height / 2 - size / 2}px`;
+
+  fxEl.appendChild(pulse);
+}
+
+function spawnFxForClearSet(matches) {
+  clearFxLayer();
+
+  const rowBeams = new Set();
+  const colBeams = new Set();
+  const pulses = [];
+
+  matches.forEach((key) => {
+    const { row, col } = parseKey(key);
+    const candy = board[row][col];
+    if (!candy) return;
+
+    if (candy.kind === 'striped') {
+      if (candy.orientation === 'row') rowBeams.add(row);
+      if (candy.orientation === 'col') colBeams.add(col);
+    }
+
+    if (candy.kind === 'colorBomb') {
+      pulses.push({ row, col });
+    }
+  });
+
+  rowBeams.forEach((row) => addBeamFx('row', row, 0));
+  colBeams.forEach((col) => addBeamFx('col', 0, col));
+  pulses.forEach((p) => addPulseFx(p.row, p.col));
+}
+
 async function animateClear(matches) {
   if (matches.size >= BIG_CLEAR_SHAKE_THRESHOLD) {
     boardEl.classList.add('board-shake');
   }
+
+  // Spawn flashy effects for specials before we fade cells.
+  spawnFxForClearSet(matches);
 
   matches.forEach((key) => {
     const { row, col } = parseKey(key);
@@ -217,6 +296,7 @@ async function animateClear(matches) {
 
   await wait(CLEAR_DELAY_MS);
   boardEl.classList.remove('board-shake');
+  clearFxLayer();
 }
 
 function removeMatches(matches) {
