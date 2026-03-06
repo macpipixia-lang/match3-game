@@ -21,12 +21,16 @@ A simple match-3 (消消乐) game built with vanilla HTML/CSS/JS. Works fully of
 - **四连（直线 4 个）**：生成 **条纹糖**。
   - 横向四连 → 生成 **竖条纹糖**（触发时清一整列）
   - 纵向四连 → 生成 **横条纹糖**（触发时清一整行）
+- **五消（T/L 形）**：生成 **包装糖**。
+  - 触发时以自身为中心 **3x3 爆炸两次**。
 - **五连及以上（直线 5+）**：生成 **彩虹炸弹（Color Bomb）**。
   - 彩虹炸弹与任意糖果交换：清除全盘该颜色（包含同色特殊糖）。
 
 - **Match exactly 4 in a line**: creates a **striped candy**.
   - Horizontal 4-match → **vertical-striped** candy (clears a column when activated)
   - Vertical 4-match → **horizontal-striped** candy (clears a row when activated)
+- **Match 5 in a T/L shape**: creates a **Wrapped Candy**.
+  - When activated, it explodes twice in a 3x3 area.
 - **Match 5+ in a straight line**: creates a **Color Bomb**.
   - Swap the Color Bomb with any candy to clear all candies of that color (including specials).
 

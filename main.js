@@ -4,6 +4,7 @@ const BOARD_SIZE = 8;
 const GEM_TYPES = [0, 1, 2, 3, 4, 5];
 const CLEAR_DELAY_MS = 260;
 const DROP_DELAY_MS = 170;
+const WRAPPED_PULSE_DELAY_MS = 120;
 const SCORE_PER_GEM = 10;
 const BIG_CLEAR_SHAKE_THRESHOLD = 8;
 
@@ -34,7 +35,14 @@ function createStripedCandy(color, orientation) {
   return {
     kind: 'striped',
     color,
-    orientation,
+    orientation, // 'row' | 'col'
+  };
+}
+
+function createWrappedCandy(color) {
+  return {
+    kind: 'wrapped',
+    color,
   };
 }
 
@@ -115,6 +123,8 @@ function gemClasses(row, col) {
   if (candy.kind === 'striped') {
     classes.push('gem--striped');
     classes.push(candy.orientation === 'row' ? 'gem--striped-row' : 'gem--striped-col');
+  } else if (candy.kind === 'wrapped') {
+    classes.push('gem--wrapped');
   } else if (candy.kind === 'colorBomb') {
     classes.push('gem--color-bomb');
   }
@@ -141,8 +151,9 @@ function renderBoard() {
 }
 
 function findMatches() {
+  // Straight-line matches only. Shape (T/L) is derived by analyzing connected components in the matched set.
   const matched = new Set();
-  const groups = [];
+  const lineGroups = [];
 
   for (let row = 0; row < BOARD_SIZE; row += 1) {
     let streak = 1;
@@ -162,7 +173,7 @@ function findMatches() {
             matched.add(key);
             cells.push({ row, col: i });
           }
-          groups.push({ direction: 'horizontal', length: streak, color: prevColor, cells });
+          lineGroups.push({ direction: 'horizontal', length: streak, color: prevColor, cells });
         }
         streak = 1;
       }
@@ -187,14 +198,14 @@ function findMatches() {
             matched.add(key);
             cells.push({ row: i, col });
           }
-          groups.push({ direction: 'vertical', length: streak, color: prevColor, cells });
+          lineGroups.push({ direction: 'vertical', length: streak, color: prevColor, cells });
         }
         streak = 1;
       }
     }
   }
 
-  return { matched, groups };
+  return { matched, lineGroups };
 }
 
 function wait(ms) {
@@ -251,12 +262,32 @@ function addPulseFx(row, col) {
   fxEl.appendChild(pulse);
 }
 
+function addWrappedBlastFx(row, col) {
+  if (!fxEl) return;
+  const cell = boardEl.querySelector(`[data-row="${row}"][data-col="${col}"]`);
+  if (!cell) return;
+
+  const boardRect = boardEl.getBoundingClientRect();
+  const cellRect = cell.getBoundingClientRect();
+
+  const blast = document.createElement('div');
+  blast.className = 'wrapped-blast';
+  const size = Math.max(cellRect.width, cellRect.height) * 3.2;
+  blast.style.width = `${size}px`;
+  blast.style.height = `${size}px`;
+  blast.style.left = `${cellRect.left - boardRect.left + cellRect.width / 2 - size / 2}px`;
+  blast.style.top = `${cellRect.top - boardRect.top + cellRect.height / 2 - size / 2}px`;
+
+  fxEl.appendChild(blast);
+}
+
 function spawnFxForClearSet(matches) {
   clearFxLayer();
 
   const rowBeams = new Set();
   const colBeams = new Set();
   const pulses = [];
+  const wrappedBlasts = [];
 
   matches.forEach((key) => {
     const { row, col } = parseKey(key);
@@ -266,16 +297,17 @@ function spawnFxForClearSet(matches) {
     if (candy.kind === 'striped') {
       if (candy.orientation === 'row') rowBeams.add(row);
       if (candy.orientation === 'col') colBeams.add(col);
-    }
-
-    if (candy.kind === 'colorBomb') {
+    } else if (candy.kind === 'colorBomb') {
       pulses.push({ row, col });
+    } else if (candy.kind === 'wrapped') {
+      wrappedBlasts.push({ row, col });
     }
   });
 
   rowBeams.forEach((row) => addBeamFx('row', row, 0));
   colBeams.forEach((col) => addBeamFx('col', 0, col));
   pulses.forEach((p) => addPulseFx(p.row, p.col));
+  wrappedBlasts.forEach((p) => addWrappedBlastFx(p.row, p.col));
 }
 
 async function animateClear(matches) {
@@ -283,7 +315,6 @@ async function animateClear(matches) {
     boardEl.classList.add('board-shake');
   }
 
-  // Spawn flashy effects for specials before we fade cells.
   spawnFxForClearSet(matches);
 
   matches.forEach((key) => {
@@ -300,12 +331,16 @@ async function animateClear(matches) {
 }
 
 function removeMatches(matches) {
+  let removedCount = 0;
+
   matches.forEach((key) => {
     const { row, col } = parseKey(key);
+    if (!board[row][col]) return;
     board[row][col] = null;
+    removedCount += 1;
   });
 
-  score += matches.size * SCORE_PER_GEM;
+  score += removedCount * SCORE_PER_GEM;
   updateHud();
 }
 
@@ -329,74 +364,6 @@ function dropAndFill() {
   }
 }
 
-function pickSpawnCell(group, preferredCell, occupied) {
-  const candidates = [];
-
-  if (preferredCell && group.cells.some((cell) => cell.row === preferredCell.row && cell.col === preferredCell.col)) {
-    candidates.push(preferredCell);
-  }
-
-  const middleCell = group.cells[Math.floor(group.cells.length / 2)];
-  if (middleCell) {
-    candidates.push(middleCell);
-  }
-
-  candidates.push(...group.cells);
-
-  const seen = new Set();
-  for (const cell of candidates) {
-    const key = keyOf(cell.row, cell.col);
-    if (seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    if (!occupied.has(key)) {
-      return cell;
-    }
-  }
-
-  return null;
-}
-
-function planSpecialSpawns(groups, preferredCell) {
-  const plans = new Map();
-  const occupied = new Set();
-
-  const sortedGroups = [...groups].sort((a, b) => b.length - a.length);
-
-  for (const group of sortedGroups) {
-    let spawnedCandy = null;
-
-    if (group.length >= 5) {
-      spawnedCandy = createColorBomb(group.color);
-    } else if (group.length === 4) {
-      const orientation = group.direction === 'horizontal' ? 'col' : 'row';
-      spawnedCandy = createStripedCandy(group.color, orientation);
-    }
-
-    if (!spawnedCandy) {
-      continue;
-    }
-
-    const spawnCell = pickSpawnCell(group, preferredCell, occupied);
-    if (!spawnCell) {
-      continue;
-    }
-
-    const key = keyOf(spawnCell.row, spawnCell.col);
-    const existing = plans.get(key);
-    const newPriority = spawnedCandy.kind === 'colorBomb' ? 2 : 1;
-    const existingPriority = existing ? (existing.kind === 'colorBomb' ? 2 : 1) : 0;
-
-    if (!existing || newPriority > existingPriority) {
-      plans.set(key, spawnedCandy);
-    }
-    occupied.add(key);
-  }
-
-  return plans;
-}
-
 function collectColorCells(color) {
   const cells = [];
   for (let row = 0; row < BOARD_SIZE; row += 1) {
@@ -410,10 +377,181 @@ function collectColorCells(color) {
   return cells;
 }
 
+function get4Neighbors(cell) {
+  return [
+    { row: cell.row - 1, col: cell.col },
+    { row: cell.row + 1, col: cell.col },
+    { row: cell.row, col: cell.col - 1 },
+    { row: cell.row, col: cell.col + 1 },
+  ].filter((n) => inBounds(n.row, n.col));
+}
+
+function buildMatchedComponents(matchedSet) {
+  const visited = new Set();
+  const components = [];
+
+  for (const key of matchedSet) {
+    if (visited.has(key)) continue;
+    const start = parseKey(key);
+    const startCandy = board[start.row][start.col];
+    if (!startCandy) {
+      visited.add(key);
+      continue;
+    }
+
+    const color = startCandy.color;
+    const comp = [];
+    const stack = [start];
+    visited.add(key);
+
+    while (stack.length) {
+      const cur = stack.pop();
+      comp.push(cur);
+      for (const n of get4Neighbors(cur)) {
+        const nk = keyOf(n.row, n.col);
+        if (!matchedSet.has(nk) || visited.has(nk)) continue;
+        const c = board[n.row][n.col];
+        if (!c || c.color !== color) continue;
+        visited.add(nk);
+        stack.push(n);
+      }
+    }
+
+    components.push({ color, cells: comp });
+  }
+
+  return components;
+}
+
+function countInDirection(set, row, col, dr, dc) {
+  let r = row + dr;
+  let c = col + dc;
+  let count = 0;
+  while (set.has(keyOf(r, c))) {
+    count += 1;
+    r += dr;
+    c += dc;
+  }
+  return count;
+}
+
+function analyzeComponent(component) {
+  const cellSet = new Set(component.cells.map((c) => keyOf(c.row, c.col)));
+
+  let hasStraight5 = false;
+  let hasStraight4 = false;
+  let bestStraight5Cell = null;
+  let bestStraight4Group = null;
+
+  let wrappedIntersection = null;
+
+  for (const cell of component.cells) {
+    const left = countInDirection(cellSet, cell.row, cell.col, 0, -1);
+    const right = countInDirection(cellSet, cell.row, cell.col, 0, 1);
+    const up = countInDirection(cellSet, cell.row, cell.col, -1, 0);
+    const down = countInDirection(cellSet, cell.row, cell.col, 1, 0);
+
+    const hLen = 1 + left + right;
+    const vLen = 1 + up + down;
+
+    if (hLen >= 5 || vLen >= 5) {
+      hasStraight5 = true;
+      bestStraight5Cell = cell;
+    }
+
+    if (!hasStraight5 && (hLen === 4 || vLen === 4)) {
+      hasStraight4 = true;
+      if (!bestStraight4Group || (hLen === 4 && bestStraight4Group.direction !== 'horizontal') || (vLen === 4 && bestStraight4Group.direction !== 'vertical')) {
+        if (hLen === 4) {
+          bestStraight4Group = { direction: 'horizontal', cell };
+        } else if (vLen === 4) {
+          bestStraight4Group = { direction: 'vertical', cell };
+        }
+      }
+    }
+
+    // Wrapped: needs both a horizontal run >=3 and vertical run >=3 sharing a cell.
+    if (hLen >= 3 && vLen >= 3) {
+      wrappedIntersection = cell;
+    }
+  }
+
+  const isWrappedShape = component.cells.length >= 5 && Boolean(wrappedIntersection) && !hasStraight5;
+
+  return {
+    cellSet,
+    hasStraight5,
+    hasStraight4,
+    bestStraight5Cell,
+    bestStraight4Group,
+    isWrappedShape,
+    wrappedIntersection,
+  };
+}
+
+function chooseSpawnCell(preferredCell, component, analysis) {
+  if (preferredCell && analysis.cellSet.has(keyOf(preferredCell.row, preferredCell.col))) {
+    return preferredCell;
+  }
+  if (analysis.isWrappedShape && analysis.wrappedIntersection) {
+    return analysis.wrappedIntersection;
+  }
+  if (analysis.bestStraight5Cell) {
+    return analysis.bestStraight5Cell;
+  }
+  if (analysis.bestStraight4Group) {
+    return analysis.bestStraight4Group.cell;
+  }
+  return component.cells[Math.floor(component.cells.length / 2)] || null;
+}
+
+function planSpecialSpawnsFromMatched(matchedSet, preferredCell) {
+  const plans = new Map();
+
+  const components = buildMatchedComponents(matchedSet);
+
+  for (const component of components) {
+    const analysis = analyzeComponent(component);
+
+    let spawnedCandy = null;
+    let priority = 0;
+
+    if (analysis.hasStraight5) {
+      spawnedCandy = createColorBomb(component.color);
+      priority = 3;
+    } else if (analysis.isWrappedShape) {
+      spawnedCandy = createWrappedCandy(component.color);
+      priority = 2;
+    } else if (analysis.hasStraight4) {
+      const direction = analysis.bestStraight4Group?.direction;
+      // Rule: horizontal 4-match => vertical-striped => clears column.
+      //       vertical 4-match   => horizontal-striped => clears row.
+      const orientation = direction === 'horizontal' ? 'col' : 'row';
+      spawnedCandy = createStripedCandy(component.color, orientation);
+      priority = 1;
+    }
+
+    if (!spawnedCandy) continue;
+
+    const spawnCell = chooseSpawnCell(preferredCell, component, analysis);
+    if (!spawnCell) continue;
+
+    const k = keyOf(spawnCell.row, spawnCell.col);
+    const existing = plans.get(k);
+    const existingPriority = existing ? (existing.kind === 'colorBomb' ? 3 : existing.kind === 'wrapped' ? 2 : 1) : 0;
+    if (!existing || priority > existingPriority) {
+      plans.set(k, spawnedCandy);
+    }
+  }
+
+  return plans;
+}
+
 function expandClearSet(initialClear, protectedCells = new Set(), colorBombOverrides = new Map()) {
   const result = new Set();
   const activated = new Set();
   const queue = [...initialClear];
+  const wrappedCenters = new Set();
 
   while (queue.length > 0) {
     const key = queue.pop();
@@ -443,9 +581,15 @@ function expandClearSet(initialClear, protectedCells = new Set(), colorBombOverr
           queue.push(keyOf(r, col));
         }
       }
-    }
-
-    if (candy.kind === 'colorBomb') {
+    } else if (candy.kind === 'wrapped') {
+      activated.add(key);
+      wrappedCenters.add(key);
+      for (let dr = -1; dr <= 1; dr += 1) {
+        for (let dc = -1; dc <= 1; dc += 1) {
+          queue.push(keyOf(row + dr, col + dc));
+        }
+      }
+    } else if (candy.kind === 'colorBomb') {
       activated.add(key);
       const targetColor = colorBombOverrides.has(key) ? colorBombOverrides.get(key) : candy.color;
       if (targetColor === null || targetColor === undefined) {
@@ -458,7 +602,7 @@ function expandClearSet(initialClear, protectedCells = new Set(), colorBombOverr
     }
   }
 
-  return result;
+  return { clearSet: result, wrappedCenters };
 }
 
 function applySpawnPlans(spawnPlans) {
@@ -514,34 +658,59 @@ async function resolveCascades(preferredSpawnCell, initialForcedContext = null) 
   let forcedContext = initialForcedContext;
 
   while (true) {
-    let clearSet;
+    let clearContext;
     let spawnPlans = new Map();
 
     if (forcedContext) {
       const forcedClear = forcedContext.clearSet || new Set();
       const forcedOverrides = forcedContext.colorBombOverrides || new Map();
-      clearSet = expandClearSet(forcedClear, new Set(), forcedOverrides);
+      clearContext = expandClearSet(forcedClear, new Set(), forcedOverrides);
       forcedContext = null;
     } else {
-      const { matched, groups } = findMatches();
+      const { matched } = findMatches();
       if (matched.size === 0) {
         break;
       }
 
-      spawnPlans = planSpecialSpawns(groups, preferred);
+      spawnPlans = planSpecialSpawnsFromMatched(matched, preferred);
       preferred = null;
 
       const protectedCells = new Set(spawnPlans.keys());
       const baseClear = new Set([...matched].filter((key) => !protectedCells.has(key)));
-      clearSet = expandClearSet(baseClear, protectedCells);
+      clearContext = expandClearSet(baseClear, protectedCells);
     }
+
+    const clearSet = clearContext.clearSet;
+    const wrappedCenters = clearContext.wrappedCenters;
 
     if (clearSet.size === 0) {
       break;
     }
 
+    // Pulse 1
     await animateClear(clearSet);
     removeMatches(clearSet);
+
+    // Pulse 2 for wrapped candies (before gravity), Candy-Crush-ish.
+    if (wrappedCenters.size > 0) {
+      await wait(WRAPPED_PULSE_DELAY_MS);
+      const secondInitial = new Set();
+      wrappedCenters.forEach((centerKey) => {
+        const { row, col } = parseKey(centerKey);
+        for (let dr = -1; dr <= 1; dr += 1) {
+          for (let dc = -1; dc <= 1; dc += 1) {
+            secondInitial.add(keyOf(row + dr, col + dc));
+          }
+        }
+      });
+      const secondContext = expandClearSet(secondInitial);
+      const secondSet = secondContext.clearSet;
+      if (secondSet.size > 0) {
+        await animateClear(secondSet);
+        removeMatches(secondSet);
+      }
+    }
+
     applySpawnPlans(spawnPlans);
     dropAndFill();
     renderBoard();
@@ -642,6 +811,7 @@ function resetGame() {
   generateBoardWithoutMatches();
   updateHud();
   renderBoard();
+  clearFxLayer();
 }
 
 boardEl.addEventListener('click', (event) => {
