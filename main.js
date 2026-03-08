@@ -51,6 +51,10 @@ let comboToastTimer = 0;
 let currentLevelIndex = 0;
 let bestScore = 0;
 let pendingOutcome = null;
+
+// DOM cache for performance: create 8x8 buttons once, then only update classes.
+let cellEls = null; // HTMLElement[BOARD_SIZE][BOARD_SIZE]
+
 const missingSfx = new Set();
 const sfxPool = new Map();
 
@@ -179,18 +183,87 @@ function gemClasses(row, col) {
   return classes.join(' ');
 }
 
-function renderBoard() {
-  let html = '';
+function ensureBoardDom() {
+  if (cellEls) return;
+  cellEls = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(null));
+
+  const frag = document.createDocumentFragment();
   for (let row = 0; row < BOARD_SIZE; row += 1) {
     for (let col = 0; col < BOARD_SIZE; col += 1) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.dataset.row = String(row);
+      btn.dataset.col = String(col);
+      cellEls[row][col] = btn;
+      frag.appendChild(btn);
+    }
+  }
+  boardEl.innerHTML = '';
+  boardEl.appendChild(frag);
+}
+
+function updateBoardDom() {
+  ensureBoardDom();
+  for (let row = 0; row < BOARD_SIZE; row += 1) {
+    for (let col = 0; col < BOARD_SIZE; col += 1) {
+      const btn = cellEls[row][col];
       const candy = board[row][col];
       const label = candy
         ? `Candy at row ${row + 1}, col ${col + 1}`
         : `Empty at row ${row + 1}, col ${col + 1}`;
-      html += `<button class="${gemClasses(row, col)}" data-row="${row}" data-col="${col}" aria-label="${label}"></button>`;
+      btn.className = gemClasses(row, col);
+      btn.setAttribute('aria-label', label);
     }
   }
-  boardEl.innerHTML = html;
+}
+
+function captureCellRects() {
+  ensureBoardDom();
+  const rects = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(null));
+  for (let row = 0; row < BOARD_SIZE; row += 1) {
+    for (let col = 0; col < BOARD_SIZE; col += 1) {
+      rects[row][col] = cellEls[row][col].getBoundingClientRect();
+    }
+  }
+  return rects;
+}
+
+function nextFrame() {
+  return new Promise((resolve) => window.requestAnimationFrame(resolve));
+}
+
+async function animateFlip(updateFn, durationMs) {
+  // FLIP animation: First → Last → Invert → Play
+  const first = captureCellRects();
+  updateFn();
+  const last = captureCellRects();
+
+  // Invert: move elements back to where they were.
+  for (let row = 0; row < BOARD_SIZE; row += 1) {
+    for (let col = 0; col < BOARD_SIZE; col += 1) {
+      const el = cellEls[row][col];
+      const dx = first[row][col].left - last[row][col].left;
+      const dy = first[row][col].top - last[row][col].top;
+      el.style.transitionDuration = '0ms';
+      el.style.transform = (dx || dy) ? `translate(${dx}px, ${dy}px)` : '';
+    }
+  }
+
+  // Play: on next frame, clear transform so CSS transition animates to the new position.
+  await nextFrame();
+  for (let row = 0; row < BOARD_SIZE; row += 1) {
+    for (let col = 0; col < BOARD_SIZE; col += 1) {
+      const el = cellEls[row][col];
+      el.style.transitionDuration = `${durationMs}ms`;
+      el.style.transform = '';
+    }
+  }
+
+  await wait(durationMs);
+}
+
+function renderBoard() {
+  updateBoardDom();
 }
 
 function findMatches() {
@@ -1155,17 +1228,20 @@ async function resolveCascades(preferredSpawnCell, initialForcedContext = null) 
       }
     }
 
-    applySpawnPlans(spawnPlans);
-    dropAndFill();
-    renderBoard();
-    await wait(DROP_DELAY_MS);
+    await animateFlip(() => {
+      applySpawnPlans(spawnPlans);
+      dropAndFill();
+      renderBoard();
+    }, DROP_DELAY_MS);
   }
 }
 
 async function trySwap(from, to) {
   isLocked = true;
-  swapCells(from, to);
-  renderBoard();
+  await animateFlip(() => {
+    swapCells(from, to);
+    renderBoard();
+  }, 140);
 
   const comboContext = buildComboClearContext(from, to);
   if (comboContext) {
@@ -1184,13 +1260,14 @@ async function trySwap(from, to) {
   const { matched } = findMatches();
 
   if (matched.size === 0) {
-    await wait(120);
-    swapCells(from, to);
-    selected = null;
-    renderBoard();
+    await animateFlip(() => {
+      swapCells(from, to);
+      selected = null;
+      renderBoard();
+    }, 140);
 
-    const a = boardEl.querySelector(`[data-row="${from.row}"][data-col="${from.col}"]`);
-    const b = boardEl.querySelector(`[data-row="${to.row}"][data-col="${to.col}"]`);
+    const a = cellEls[from.row][from.col];
+    const b = cellEls[to.row][to.col];
 
     if (a) {
       a.classList.add('invalid');
