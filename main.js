@@ -409,12 +409,21 @@ function syncPiecesDom({ durationMs = 0 } = {}) {
   }
 
   // Remove stale piece elements (should be rare).
+  // Perf: batch removals into a single timer to avoid scheduling dozens of timeouts
+  // during large clears / cascades.
+  const stale = [];
   for (const [id, el] of pieceElsById.entries()) {
     if (seen.has(id)) continue;
     el.classList.add('clearing');
+    stale.push({ id, el });
+  }
+
+  if (stale.length > 0) {
     window.setTimeout(() => {
-      el.remove();
-      pieceElsById.delete(id);
+      stale.forEach(({ id, el }) => {
+        el.remove();
+        pieceElsById.delete(id);
+      });
     }, CLEAR_DELAY_MS);
   }
 }
@@ -659,6 +668,11 @@ function clearFxLayer() {
 
 const SPARKLE_MAX_PER_WAVE = 120;
 
+// Perf: cap sparkle DOM nodes for big clears.
+// Keep particles (visual feedback) but prevent large clears from creating hundreds of nodes at once.
+const SPARKLE_MAX_PER_CLEAR = 80;
+const SPARKLE_SKIP_THRESHOLD = 24;
+
 function hueForGemColor(color) {
   // Map our 0..5 palette to a visually distinct hue range.
   // (Hand-tuned for “candy” colors; no external deps.)
@@ -819,18 +833,30 @@ function spawnFxForClearSet(matches, fxOverrides = null) {
   pulses.forEach((p) => addPulseFx(p.row, p.col));
   wrappedBlasts.forEach((p) => addWrappedBlastFx(p.row, p.col));
 
-  // Lightweight sparkle particles for every cleared cell.
+  // Lightweight sparkle particles for cleared cells.
   // Performance rule: keep each wave under a hard DOM budget.
-  let budget = SPARKLE_MAX_PER_WAVE;
-  let basePerCell = 3;
-  if (clearCount >= 8) basePerCell = 4;
-  if (clearCount >= 12) basePerCell = 5;
+  // For huge clears, sample cells so we stay smooth.
+  let budget = Math.min(SPARKLE_MAX_PER_WAVE, SPARKLE_MAX_PER_CLEAR);
 
-  // Guarantee we don't exceed the wave budget.
-  const perCellCap = Math.max(1, Math.floor(budget / Math.max(1, clearCount)));
+  // Decide how many cells get sparkles for this clear.
+  const matchKeys = [...matches];
+  const shouldSample = clearCount >= SPARKLE_SKIP_THRESHOLD;
+  let basePerCell = shouldSample ? 2 : 3;
+  if (!shouldSample) {
+    if (clearCount >= 8) basePerCell = 4;
+    if (clearCount >= 12) basePerCell = 5;
+  }
+
+  // If we'd exceed our budget, sample every Nth cell.
+  const estCellsAtBase = Math.max(1, Math.floor(budget / Math.max(1, basePerCell)));
+  const step = Math.max(1, Math.ceil(clearCount / estCellsAtBase));
+  const sparkleKeys = step === 1 ? matchKeys : matchKeys.filter((_, idx) => idx % step === 0);
+
+  // Guarantee we don't exceed the budget.
+  const perCellCap = Math.max(1, Math.floor(budget / Math.max(1, sparkleKeys.length)));
   basePerCell = Math.min(basePerCell, perCellCap);
 
-  matches.forEach((key) => {
+  sparkleKeys.forEach((key) => {
     if (budget <= 0) return;
 
     const { row, col } = parseKey(key);
