@@ -8,28 +8,56 @@
   </head>
   <body>
     <main class="app">
-      <h1>Match-3 消消乐</h1>
-      <section class="hud">
-        <div class="stat">Level: <span id="level">1</span></div>
-        <div class="stat">Score: <span id="score">0</span></div>
-        <div class="stat">Target: <span id="targetScore">0</span></div>
-        <div class="stat">Best: <span id="bestScore">0</span></div>
-        <div class="stat">Moves: <span id="moves">0</span>/<span id="moveLimit">0</span></div>
-        <button id="audioBtn" type="button" aria-pressed="false">Sound: Off</button>
-        <button id="resetBtn" type="button">Reset</button>
+      <header class="app-header">
+        <h1>Match-3 消消乐</h1>
+      </header>
+
+      <section class="hud" aria-label="Game stats">
+        <div class="hud__stats">
+          <div class="stat">
+            <span class="stat__label">Level</span>
+            <span class="stat__value" id="level">1</span>
+          </div>
+          <div class="stat">
+            <span class="stat__label">Score</span>
+            <span class="stat__value" id="score">0</span>
+          </div>
+          <div class="stat">
+            <span class="stat__label">Target</span>
+            <span class="stat__value" id="targetScore">0</span>
+          </div>
+          <div class="stat">
+            <span class="stat__label">Best</span>
+            <span class="stat__value" id="bestScore">0</span>
+          </div>
+          <div class="stat">
+            <span class="stat__label">Moves</span>
+            <span class="stat__value">
+              <span id="moves">0</span><span class="stat__dim">/</span><span id="moveLimit">0</span>
+            </span>
+          </div>
+        </div>
+
+        <div class="hud__actions">
+          <button class="btn btn--toggle" id="audioBtn" type="button" aria-pressed="false">Sound: Off</button>
+          <button class="btn btn--accent" id="resetBtn" type="button">Reset</button>
+        </div>
       </section>
+
       <div class="board-wrap" aria-label="Match-3 board">
         <section id="board" class="board" role="grid"></section>
         <div id="fx" class="fx" aria-hidden="true"></div>
         <div id="comboToast" class="combo-toast" aria-live="polite"></div>
       </div>
+
       <section id="levelOverlay" class="level-overlay hidden" role="dialog" aria-modal="true" aria-live="polite">
         <div class="level-card">
           <h2 id="overlayTitle">Level Complete</h2>
           <p id="overlayBody">Ready for next level.</p>
-          <button id="overlayActionBtn" type="button">Next</button>
+          <button class="btn btn--primary" id="overlayActionBtn" type="button">Next</button>
         </div>
       </section>
+
       <p class="hint">Click one gem, then an adjacent gem to swap.</p>
     </main>
 
