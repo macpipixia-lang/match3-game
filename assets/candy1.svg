@@ -1,12 +1,20 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
   <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#93c5fd"/>
+    <linearGradient id="c1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#bfdbfe"/>
       <stop offset="1" stop-color="#2563eb"/>
     </linearGradient>
   </defs>
-  <!-- Jellybean -->
-  <path d="M44 26c20-10 44 2 54 22 10 20 3 46-17 60-20 14-48 10-62-10C5 78 6 52 22 36c6-6 14-8 22-10z" fill="url(#g)"/>
-  <path d="M38 42c10-10 30-12 42-4" fill="none" stroke="#fff" stroke-opacity="0.7" stroke-width="10" stroke-linecap="round"/>
-  <path d="M34 84c8 12 26 18 40 12" fill="none" stroke="#0b1220" stroke-opacity="0.22" stroke-width="10" stroke-linecap="round"/>
+
+  <!-- Jellybean (chunky, glossy) -->
+  <g>
+    <path d="M46 24c22-10 48 4 58 26 10 22 1 50-21 64-22 14-52 8-66-14C3 78 6 50 24 34c6-6 14-8 22-10z" fill="#000" opacity="0.14" transform="translate(2 3)"/>
+    <path d="M46 24c22-10 48 4 58 26 10 22 1 50-21 64-22 14-52 8-66-14C3 78 6 50 24 34c6-6 14-8 22-10z" fill="url(#c1)"/>
+    <path d="M46 24c22-10 48 4 58 26 10 22 1 50-21 64-22 14-52 8-66-14C3 78 6 50 24 34c6-6 14-8 22-10z" fill="none" stroke="#0b1220" stroke-opacity="0.22" stroke-width="4"/>
+
+    <path d="M38 44c10-12 32-16 46-6" fill="none" stroke="#fff" stroke-opacity="0.55" stroke-width="11" stroke-linecap="round"/>
+    <path d="M42 60c8 8 22 10 30 5" fill="none" stroke="#fff" stroke-opacity="0.22" stroke-width="8" stroke-linecap="round"/>
+
+    <path d="M34 86c8 12 28 18 42 10" fill="none" stroke="#0b1220" stroke-opacity="0.18" stroke-width="10" stroke-linecap="round"/>
+  </g>
 </svg>

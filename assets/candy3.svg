@@ -1,12 +1,20 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
   <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="c3" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#fde68a"/>
       <stop offset="1" stop-color="#f59e0b"/>
     </linearGradient>
   </defs>
-  <!-- Hard candy gem -->
-  <path d="M64 16l22 18 26 10-6 26 6 26-26 10-22 18-22-18-26-10 6-26-6-26 26-10 22-18z" fill="url(#g)"/>
-  <path d="M64 26l14 12 18 6-4 18 4 18-18 6-14 12-14-12-18-6 4-18-4-18 18-6 14-12z" fill="none" stroke="#fff" stroke-opacity="0.5" stroke-width="6"/>
-  <path d="M48 44c10-10 26-10 36 0" fill="none" stroke="#fff" stroke-opacity="0.7" stroke-width="10" stroke-linecap="round"/>
+
+  <!-- Faceted hard candy gem -->
+  <g>
+    <path d="M64 16l22 18 26 10-6 26 6 26-26 10-22 18-22-18-26-10 6-26-6-26 26-10 22-18z" fill="#000" opacity="0.14" transform="translate(2 3)"/>
+    <path d="M64 16l22 18 26 10-6 26 6 26-26 10-22 18-22-18-26-10 6-26-6-26 26-10 22-18z" fill="url(#c3)"/>
+    <path d="M64 16l22 18 26 10-6 26 6 26-26 10-22 18-22-18-26-10 6-26-6-26 26-10 22-18z" fill="none" stroke="#0b1220" stroke-opacity="0.22" stroke-width="4"/>
+
+    <path d="M64 24l16 14 20 7-5 21 5 21-20 7-16 14-16-14-20-7 5-21-5-21 20-7 16-14z" fill="none" stroke="#fff" stroke-opacity="0.45" stroke-width="6"/>
+
+    <path d="M46 44c10-12 28-12 38 0" fill="none" stroke="#fff" stroke-opacity="0.62" stroke-width="10" stroke-linecap="round"/>
+    <path d="M42 64l22 22 22-22" fill="none" stroke="#fff" stroke-opacity="0.18" stroke-width="8" stroke-linecap="round"/>
+  </g>
 </svg>

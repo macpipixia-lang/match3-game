@@ -1,16 +1,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
   <defs>
-    <radialGradient id="g" cx="35%" cy="30%" r="70%">
-      <stop offset="0" stop-color="#fff" stop-opacity="0.9"/>
-      <stop offset="0.25" stop-color="#ffb4b4"/>
+    <radialGradient id="c0" cx="35%" cy="28%" r="72%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.95"/>
+      <stop offset="0.22" stop-color="#fecaca"/>
       <stop offset="1" stop-color="#ef4444"/>
     </radialGradient>
   </defs>
-  <rect width="128" height="128" rx="28" fill="none"/>
-  <!-- Lollipop -->
-  <circle cx="64" cy="54" r="36" fill="url(#g)"/>
-  <circle cx="64" cy="54" r="28" fill="none" stroke="#fff" stroke-opacity="0.65" stroke-width="8"/>
-  <circle cx="64" cy="54" r="16" fill="none" stroke="#fff" stroke-opacity="0.55" stroke-width="6"/>
-  <path d="M70 88 L92 118" stroke="#f8fafc" stroke-width="10" stroke-linecap="round"/>
-  <path d="M72 92 L90 120" stroke="#94a3b8" stroke-opacity="0.55" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- Lollipop (with outline + highlight) -->
+  <g>
+    <circle cx="66" cy="58" r="36" fill="#000" opacity="0.14"/>
+    <circle cx="64" cy="54" r="36" fill="url(#c0)"/>
+    <circle cx="64" cy="54" r="36" fill="none" stroke="#0b1220" stroke-opacity="0.22" stroke-width="4"/>
+
+    <path d="M52 42c8-10 24-14 36-6" fill="none" stroke="#fff" stroke-opacity="0.55" stroke-width="10" stroke-linecap="round"/>
+    <path d="M50 60c10 10 24 12 34 6" fill="none" stroke="#fff" stroke-opacity="0.28" stroke-width="8" stroke-linecap="round"/>
+
+    <path d="M72 90 L92 118" stroke="#000" stroke-opacity="0.16" stroke-width="12" stroke-linecap="round"/>
+    <path d="M70 88 L92 118" stroke="#f8fafc" stroke-width="10" stroke-linecap="round"/>
+    <path d="M72 92 L90 120" stroke="#94a3b8" stroke-opacity="0.55" stroke-width="4" stroke-linecap="round"/>
+  </g>
 </svg>

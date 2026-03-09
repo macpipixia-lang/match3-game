@@ -1,11 +1,24 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
   <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="c5" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#fecdd3"/>
       <stop offset="1" stop-color="#ec4899"/>
     </linearGradient>
   </defs>
-  <!-- Candy cane -->
-  <path d="M76 18c14 0 26 12 26 26 0 18-14 26-26 26H60v40c0 10-8 18-18 18s-18-8-18-18" fill="none" stroke="url(#g)" stroke-width="20" stroke-linecap="round"/>
-  <path d="M78 18c14 0 26 12 26 26 0 18-14 26-26 26H62" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round" stroke-dasharray="10 14" opacity="0.9"/>
+
+  <!-- Candy cane (outlined + shadow) -->
+  <g fill="none" stroke-linecap="round">
+    <!-- shadow -->
+    <path d="M76 18c14 0 26 12 26 26 0 18-14 26-26 26H60v40c0 10-8 18-18 18s-18-8-18-18" stroke="#000" stroke-opacity="0.14" stroke-width="22" transform="translate(2 3)"/>
+
+    <!-- outline (behind) -->
+    <path d="M76 18c14 0 26 12 26 26 0 18-14 26-26 26H60v40c0 10-8 18-18 18s-18-8-18-18" stroke="#0b1220" stroke-opacity="0.18" stroke-width="24"/>
+
+    <!-- main body -->
+    <path d="M76 18c14 0 26 12 26 26 0 18-14 26-26 26H60v40c0 10-8 18-18 18s-18-8-18-18" stroke="url(#c5)" stroke-width="20"/>
+
+    <!-- white stripes -->
+    <path d="M78 18c14 0 26 12 26 26 0 18-14 26-26 26H62" stroke="#fff" stroke-width="8" stroke-dasharray="10 14" opacity="0.9"/>
+    <path d="M60 72v40c0 10-8 18-18 18s-18-8-18-18" stroke="#fff" stroke-width="7" stroke-dasharray="10 16" opacity="0.55"/>
+  </g>
 </svg>

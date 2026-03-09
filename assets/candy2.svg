@@ -1,13 +1,24 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
   <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#34d399"/>
+    <linearGradient id="c2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6ee7b7"/>
       <stop offset="1" stop-color="#059669"/>
     </linearGradient>
   </defs>
-  <!-- Wrapped candy -->
-  <path d="M40 46c0-10 8-18 18-18h12c10 0 18 8 18 18v36c0 10-8 18-18 18H58c-10 0-18-8-18-18V46z" fill="url(#g)"/>
-  <path d="M40 54l48 20M40 74l48-20" stroke="#ffffff" stroke-opacity="0.55" stroke-width="8" stroke-linecap="round"/>
-  <path d="M30 64c-10 10-10 20 0 30 14-2 20-10 18-24-2-14-8-20-18-6z" fill="#10b981" opacity="0.95"/>
-  <path d="M98 64c10 10 10 20 0 30-14-2-20-10-18-24 2-14 8-20 18-6z" fill="#10b981" opacity="0.95"/>
+
+  <!-- Wrapped candy (body + bow ends, clear outline) -->
+  <g>
+    <path d="M42 46c0-10 8-18 18-18h12c10 0 18 8 18 18v36c0 10-8 18-18 18H60c-10 0-18-8-18-18V46z" fill="#000" opacity="0.14" transform="translate(2 3)"/>
+    <path d="M42 46c0-10 8-18 18-18h12c10 0 18 8 18 18v36c0 10-8 18-18 18H60c-10 0-18-8-18-18V46z" fill="url(#c2)"/>
+    <path d="M42 46c0-10 8-18 18-18h12c10 0 18 8 18 18v36c0 10-8 18-18 18H60c-10 0-18-8-18-18V46z" fill="none" stroke="#0b1220" stroke-opacity="0.22" stroke-width="4"/>
+
+    <path d="M44 54l48 20M44 74l48-20" stroke="#ffffff" stroke-opacity="0.62" stroke-width="9" stroke-linecap="round"/>
+    <path d="M48 46c8-10 28-12 36-4" fill="none" stroke="#fff" stroke-opacity="0.35" stroke-width="10" stroke-linecap="round"/>
+
+    <path d="M30 64c-10 10-10 20 0 30 14-2 20-10 18-24-2-14-8-20-18-6z" fill="#10b981" opacity="0.98"/>
+    <path d="M30 64c-10 10-10 20 0 30 14-2 20-10 18-24-2-14-8-20-18-6z" fill="none" stroke="#0b1220" stroke-opacity="0.18" stroke-width="4"/>
+
+    <path d="M98 64c10 10 10 20 0 30-14-2-20-10-18-24 2-14 8-20 18-6z" fill="#10b981" opacity="0.98"/>
+    <path d="M98 64c10 10 10 20 0 30-14-2-20-10-18-24 2-14 8-20 18-6z" fill="none" stroke="#0b1220" stroke-opacity="0.18" stroke-width="4"/>
+  </g>
 </svg>

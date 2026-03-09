@@ -280,8 +280,9 @@ function updateBoardDom() {
     for (let col = 0; col < BOARD_SIZE; col += 1) {
       const btn = cellEls[row][col];
       const candy = board[row][col];
+      const specialLabel = candy?.kind === 'wrapped' ? ' (Wrapped candy)' : '';
       const label = candy
-        ? `Candy at row ${row + 1}, col ${col + 1}`
+        ? `Candy at row ${row + 1}, col ${col + 1}${specialLabel}`
         : `Empty at row ${row + 1}, col ${col + 1}`;
       btn.className = gemClasses(row, col);
       btn.setAttribute('aria-label', label);
