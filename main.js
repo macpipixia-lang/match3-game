@@ -11,6 +11,7 @@ const SCORE_PER_GEM = 10;
 const BIG_CLEAR_SHAKE_THRESHOLD = 8;
 const TARGET_HIGHLIGHT_THRESHOLD = 8;
 const AUDIO_STORAGE_KEY = 'match3.audioEnabled';
+const DEBUG_STORAGE_KEY = 'match3.debugEnabled';
 const LEVEL_STORAGE_KEY = 'match3.levelIndex';
 const BEST_SCORE_STORAGE_KEY = 'match3.bestScore';
 const SFX_SOURCES = {
@@ -35,6 +36,7 @@ const movesEl = document.getElementById('moves');
 const moveLimitEl = document.getElementById('moveLimit');
 const resetBtn = document.getElementById('resetBtn');
 const audioBtn = document.getElementById('audioBtn');
+const debugBtn = document.getElementById('debugBtn');
 const comboToastEl = document.getElementById('comboToast');
 const levelOverlayEl = document.getElementById('levelOverlay');
 const overlayTitleEl = document.getElementById('overlayTitle');
@@ -47,6 +49,7 @@ let score = 0;
 let moves = 0;
 let isLocked = false;
 let audioEnabled = false;
+let debugEnabled = false;
 let comboToastTimer = 0;
 let currentLevelIndex = 0;
 let bestScore = 0;
@@ -145,6 +148,52 @@ function generateBoardWithoutMatches() {
         (row >= 2 && getMatchColor(board[row - 1][col]) === color && getMatchColor(board[row - 2][col]) === color)
       );
       board[row][col] = createNormalCandy(color);
+    }
+  }
+}
+
+function seedDebugSpecialCandies() {
+  if (!debugEnabled) return;
+
+  const totalCells = BOARD_SIZE * BOARD_SIZE;
+  const count = Math.min(20, totalCells);
+  const picks = [];
+
+  for (let row = 0; row < BOARD_SIZE; row += 1) {
+    for (let col = 0; col < BOARD_SIZE; col += 1) {
+      picks.push({ row, col });
+    }
+  }
+
+  // Fisher-Yates shuffle.
+  for (let i = picks.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = picks[i];
+    picks[i] = picks[j];
+    picks[j] = tmp;
+  }
+
+  const specialKinds = ['striped-row', 'striped-col', 'wrapped', 'colorBomb'];
+
+  for (let idx = 0; idx < count; idx += 1) {
+    const { row, col } = picks[idx];
+    const existing = board[row][col];
+    if (!existing) {
+      continue;
+    }
+
+    const color = existing.color;
+    const kind = specialKinds[Math.floor(Math.random() * specialKinds.length)];
+
+    if (kind === 'striped-row') {
+      board[row][col] = createStripedCandy(color, 'row');
+    } else if (kind === 'striped-col') {
+      board[row][col] = createStripedCandy(color, 'col');
+    } else if (kind === 'wrapped') {
+      board[row][col] = createWrappedCandy(color);
+    } else {
+      // Color bomb uses the current color too (useful for matching logic / targeting).
+      board[row][col] = createColorBomb(color);
     }
   }
 }
@@ -378,6 +427,17 @@ function updateAudioButton() {
 function loadAudioPreference() {
   audioEnabled = safeGetLocalStorage(AUDIO_STORAGE_KEY) === '1';
   updateAudioButton();
+}
+
+function updateDebugButton() {
+  if (!debugBtn) return;
+  debugBtn.setAttribute('aria-pressed', debugEnabled ? 'true' : 'false');
+  debugBtn.textContent = debugEnabled ? 'Debug: On' : 'Debug: Off';
+}
+
+function loadDebugPreference() {
+  debugEnabled = safeGetLocalStorage(DEBUG_STORAGE_KEY) === '1';
+  updateDebugButton();
 }
 
 function clampLevelIndex(index) {
@@ -1469,6 +1529,7 @@ function resetGame() {
   isLocked = false;
   pendingOutcome = null;
   generateBoardWithoutMatches();
+  seedDebugSpecialCandies();
   updateHud();
   renderBoard();
   clearFxLayer();
@@ -1492,6 +1553,16 @@ if (audioBtn) {
     safeSetLocalStorage(AUDIO_STORAGE_KEY, audioEnabled ? '1' : '0');
   });
 }
+
+if (debugBtn) {
+  debugBtn.addEventListener('click', () => {
+    debugEnabled = !debugEnabled;
+    updateDebugButton();
+    safeSetLocalStorage(DEBUG_STORAGE_KEY, debugEnabled ? '1' : '0');
+    resetGame();
+  });
+}
+
 if (overlayActionBtn) {
   overlayActionBtn.addEventListener('click', () => {
     if (pendingOutcome === 'win') {
@@ -1504,4 +1575,5 @@ if (overlayActionBtn) {
 
 loadProgress();
 loadAudioPreference();
+loadDebugPreference();
 resetGame();

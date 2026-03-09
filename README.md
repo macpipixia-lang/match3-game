@@ -71,3 +71,13 @@ A simple match-3 (消消乐) game built with vanilla HTML/CSS/JS. Works fully of
 
 Candy pieces are local SVGs in `assets/` (no external downloads).
 - SFX is optional placeholder wiring: the HUD includes a Sound toggle. If `assets/sfx/*.mp3` files exist (`clear.mp3`, `swap.mp3`, `invalid.mp3`, `combo.mp3`), the game will try to play them; missing files are skipped gracefully.
+
+---
+
+## Debug mode
+
+A **Debug** toggle is available in the HUD.
+
+- When **Debug: On**, every time you reset the game the board is regenerated and then **20 random distinct cells** are converted into random special candies (striped row/col, wrapped, or color bomb).
+- The state is persisted in `localStorage` under `match3.debugEnabled`.
+- Toggling Debug **always triggers an immediate reset**.

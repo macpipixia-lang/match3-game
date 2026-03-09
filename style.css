@@ -150,6 +150,16 @@ h1 {
   border-color: rgb(0 0 0 / 15%);
 }
 
+.btn--debug {
+  border-color: rgb(59 130 246 / 40%);
+}
+
+.btn--debug[aria-pressed='true'] {
+  background: linear-gradient(180deg, #60a5fa, #3b82f6);
+  color: #0b1b3a;
+  border-color: rgb(0 0 0 / 15%);
+}
+
 .board-wrap {
   position: relative;
   width: max-content;
