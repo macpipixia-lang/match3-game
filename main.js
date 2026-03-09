@@ -407,18 +407,6 @@ function syncPiecesDom({ durationMs = 0 } = {}) {
   }
 }
 
-function captureCellRects() {
-  // For legacy animation paths (commit 2 will remove FLIP).
-  ensureBoardDom();
-  const rects = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(null));
-  for (let row = 0; row < BOARD_SIZE; row += 1) {
-    for (let col = 0; col < BOARD_SIZE; col += 1) {
-      rects[row][col] = cellEls[row][col].getBoundingClientRect();
-    }
-  }
-  return rects;
-}
-
 function nextFrame() {
   return new Promise((resolve) => window.requestAnimationFrame(resolve));
 }
@@ -430,69 +418,6 @@ async function animateFlip(updateFn, durationMs) {
   await wait(durationMs);
 }
 
-function buildWasEmptyMatrix() {
-  return Array.from({ length: BOARD_SIZE }, (_, row) =>
-    Array.from({ length: BOARD_SIZE }, (_, col) => board[row][col] === null),
-  );
-}
-
-function computeSpawnOffsetPx(row, col) {
-  const rect00 = cachedCellRects?.[0]?.[0];
-  const rect10 = cachedCellRects?.[1]?.[0];
-  const rect0c = cachedCellRects?.[0]?.[col];
-  const rect1c = cachedCellRects?.[1]?.[col];
-
-  let stepY = 0;
-  if (rect0c && rect1c) {
-    stepY = rect1c.top - rect0c.top;
-  }
-
-  if (!Number.isFinite(stepY) || stepY <= 0) {
-    const height = rect00?.height || cellEls?.[0]?.[0]?.getBoundingClientRect().height || 0;
-    let gap = 0;
-    if (rect00 && rect10) {
-      gap = Math.max(0, rect10.top - rect00.top - rect00.height);
-    } else {
-      const rawGap = window.getComputedStyle(document.documentElement).getPropertyValue('--gap');
-      gap = Number.parseFloat(rawGap) || 0;
-    }
-    stepY = height + gap;
-  }
-
-  const offset = stepY * (row + 1);
-  return Math.max(0, offset);
-}
-
-async function animateDropAndSpawn(updateFn, durationMs) {
-  // Like animateFlip, but also animates newly spawned candies falling from above.
-  let spawnedCells = [];
-  updateFn((cells) => {
-    spawnedCells = Array.isArray(cells) ? cells : [];
-  });
-
-  // Put spawned pieces above the board before we animate everyone into place.
-  for (const cell of spawnedCells) {
-    const candy = board?.[cell.row]?.[cell.col];
-    if (!candy) continue;
-    const el = ensurePieceEl(candy.id, cell.row, cell.col);
-    const offset = computeSpawnOffsetPx(cell.row, cell.col);
-    const target = positionForCell(cell.row, cell.col);
-    el.classList.add('spawning');
-    el.style.transitionDuration = '0ms';
-    el.style.transform = offset > 0 ? `translate(${target.x}px, ${target.y - offset}px) scale(0.98)` : `translate(${target.x}px, ${target.y}px) scale(0.98)`;
-  }
-
-  await nextFrame();
-  syncPiecesDom({ durationMs });
-  await wait(durationMs);
-
-  for (const cell of spawnedCells) {
-    const candy = board?.[cell.row]?.[cell.col];
-    if (!candy) continue;
-    const el = pieceElsById.get(candy.id);
-    if (el) el.classList.remove('spawning');
-  }
-}
 
 function renderBoard({ durationMs = 0 } = {}) {
   updateBoardDom();
@@ -954,23 +879,37 @@ function removeMatches(matches) {
 }
 
 function dropAndFill() {
+  // Mutates board to its post-gravity state and returns info for newly spawned candies.
+  // Spawn rows are negative so pieces can start above the board and fall in.
+  const spawns = [];
+
   for (let col = 0; col < BOARD_SIZE; col += 1) {
-    const compacted = [];
+    const existing = [];
     for (let row = BOARD_SIZE - 1; row >= 0; row -= 1) {
       const candy = board[row][col];
       if (candy !== null) {
-        compacted.push(candy);
+        existing.push(candy);
       }
     }
 
-    while (compacted.length < BOARD_SIZE) {
-      compacted.push(createNormalCandy());
+    const missing = BOARD_SIZE - existing.length;
+    const newCandies = Array.from({ length: missing }, () => createNormalCandy());
+
+    const finalColumn = [...newCandies, ...existing].slice(0, BOARD_SIZE);
+
+    for (let row = 0; row < BOARD_SIZE; row += 1) {
+      board[row][col] = finalColumn[row] ?? null;
     }
 
-    for (let row = BOARD_SIZE - 1, i = 0; row >= 0; row -= 1, i += 1) {
-      board[row][col] = compacted[i];
+    for (let i = 0; i < newCandies.length; i += 1) {
+      const candy = newCandies[i];
+      const finalRow = i;
+      const spawnRow = i - missing; // e.g. missing=3 => rows -3,-2,-1
+      spawns.push({ candy, col, finalRow, spawnRow });
     }
   }
+
+  return spawns;
 }
 
 function collectColorCells(color) {
@@ -1583,26 +1522,29 @@ async function resolveCascades(preferredSpawnCell, initialForcedContext = null) 
       }
     }
 
-    await animateDropAndSpawn((setSpawnedCells) => {
+    // True gravity: create new candies above the board and let *all* candies fall together.
+    const spawns = (() => {
       applySpawnPlans(spawnPlans);
+      return dropAndFill();
+    })();
 
-      const wasEmpty = buildWasEmptyMatrix();
-      dropAndFill();
+    // Set up newly spawned pieces above the board before animating into their final slots.
+    for (const spawn of spawns) {
+      const el = ensurePieceEl(spawn.candy.id, spawn.finalRow, spawn.col);
+      const pos = positionForCell(spawn.spawnRow, spawn.col);
+      el.classList.add('spawning');
+      el.style.transitionDuration = '0ms';
+      el.style.transform = `translate(${pos.x}px, ${pos.y}px) scale(0.98)`;
+    }
 
-      const spawnedCells = [];
-      for (let row = 0; row < BOARD_SIZE; row += 1) {
-        for (let col = 0; col < BOARD_SIZE; col += 1) {
-          if (wasEmpty[row][col] && board[row][col] !== null) {
-            spawnedCells.push({ row, col });
-          }
-        }
-      }
+    await nextFrame();
+    renderBoard({ durationMs: DROP_DELAY_MS });
+    await wait(DROP_DELAY_MS);
 
-      renderBoard();
-      if (typeof setSpawnedCells === 'function') {
-        setSpawnedCells(spawnedCells);
-      }
-    }, DROP_DELAY_MS);
+    for (const spawn of spawns) {
+      const el = pieceElsById.get(spawn.candy.id);
+      if (el) el.classList.remove('spawning');
+    }
   }
 }
 
@@ -1610,7 +1552,6 @@ async function trySwap(from, to) {
   isLocked = true;
   await animateFlip(() => {
     swapCells(from, to);
-    renderBoard();
   }, 140);
 
   const comboContext = buildComboClearContext(from, to);
@@ -1633,7 +1574,6 @@ async function trySwap(from, to) {
     await animateFlip(() => {
       swapCells(from, to);
       selected = null;
-      renderBoard();
     }, 140);
 
     const candyA = board?.[from.row]?.[from.col];
