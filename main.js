@@ -703,7 +703,8 @@ async function animateClear(matches, fxOverrides = null) {
 
   matches.forEach((key) => {
     const { row, col } = parseKey(key);
-    const el = cellEls[row][col];
+    if (!inBounds(row, col)) return;
+    const el = cellEls?.[row]?.[col];
     if (el) {
       el.classList.add('clearing');
     }
@@ -719,6 +720,7 @@ function removeMatches(matches) {
 
   matches.forEach((key) => {
     const { row, col } = parseKey(key);
+    if (!inBounds(row, col)) return;
     if (!board[row][col]) return;
     board[row][col] = null;
     removedCount += 1;
@@ -940,15 +942,19 @@ function expandClearSet(initialClear, protectedCells = new Set(), colorBombOverr
 
   while (queue.length > 0) {
     const key = queue.pop();
+    const { row, col } = parseKey(key);
+
+    // Special clears (wrapped/striped) can enqueue out-of-bounds coordinates at edges.
+    // Ignore them early so we never carry invalid keys into animation/removal.
+    if (!inBounds(row, col)) {
+      continue;
+    }
+
     if (result.has(key) || protectedCells.has(key)) {
       continue;
     }
 
     result.add(key);
-    const { row, col } = parseKey(key);
-    if (!inBounds(row, col)) {
-      continue;
-    }
 
     const candy = board[row][col];
     if (!candy || activated.has(key)) {
