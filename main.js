@@ -365,9 +365,11 @@ function ensurePieceEl(candyId, row, col) {
   el.dataset.col = String(col);
   el.style.visibility = 'hidden';
 
-  // Set an initial transform synchronously before attaching to the DOM.
+  // Set initial position variables synchronously before attaching to the DOM.
+  // Positioning is driven by CSS `transform: translate(var(--tx), var(--ty))` so animations don't override translation.
   const pos = positionForCell(row, col);
-  el.style.transform = `translate(${pos.x}px, ${pos.y}px)`;
+  el.style.setProperty('--tx', `${pos.x}px`);
+  el.style.setProperty('--ty', `${pos.y}px`);
 
   el.setAttribute('aria-label', `Candy at row ${row + 1}, col ${col + 1}`);
   piecesEl.appendChild(el);
@@ -400,7 +402,8 @@ function syncPiecesDom({ durationMs = 0 } = {}) {
       el.style.transitionTimingFunction = 'cubic-bezier(0.18, 0.85, 0.32, 1)';
 
       const pos = positionForCell(row, col);
-      el.style.transform = `translate(${pos.x}px, ${pos.y}px)`;
+      el.style.setProperty('--tx', `${pos.x}px`);
+      el.style.setProperty('--ty', `${pos.y}px`);
       el.style.visibility = 'visible';
     }
   }
@@ -1545,7 +1548,8 @@ async function resolveCascades(preferredSpawnCell, initialForcedContext = null) 
       const pos = positionForCell(spawn.spawnRow, spawn.col);
       el.classList.add('spawning');
       el.style.transitionDuration = '0ms';
-      el.style.transform = `translate(${pos.x}px, ${pos.y}px) scale(0.98)`;
+      el.style.setProperty('--tx', `${pos.x}px`);
+      el.style.setProperty('--ty', `${pos.y}px`);
       el.style.visibility = 'visible';
     }
 

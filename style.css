@@ -202,6 +202,9 @@ h1 {
   position: absolute;
   top: 0;
   left: 0;
+  --tx: 0px;
+  --ty: 0px;
+  transform: translate(var(--tx), var(--ty));
 }
 
 .fx {
@@ -266,7 +269,7 @@ h1 {
 
 .gem.selected {
   outline: 3px solid #fff;
-  transform: scale(1.07);
+  transform: translate(var(--tx, 0px), var(--ty, 0px)) scale(1.07);
 }
 
 .gem.gem--striped::after {
@@ -449,17 +452,17 @@ h1 {
 
 @keyframes gem-clear {
   0% {
-    transform: scale(1);
+    transform: translate(var(--tx, 0px), var(--ty, 0px)) scale(1);
     opacity: 1;
     filter: brightness(1);
   }
   30% {
-    transform: scale(1.14);
+    transform: translate(var(--tx, 0px), var(--ty, 0px)) scale(1.14);
     opacity: 1;
     filter: brightness(1.45);
   }
   100% {
-    transform: scale(0.36) rotate(11deg);
+    transform: translate(var(--tx, 0px), var(--ty, 0px)) scale(0.36) rotate(11deg);
     opacity: 0;
     filter: brightness(1.65);
   }
@@ -498,19 +501,19 @@ h1 {
 @keyframes invalid-shake {
   0%,
   100% {
-    transform: translateX(0);
+    transform: translate(var(--tx, 0px), var(--ty, 0px));
   }
   25% {
-    transform: translateX(-3px);
+    transform: translate(calc(var(--tx, 0px) - 3px), var(--ty, 0px));
   }
   75% {
-    transform: translateX(3px);
+    transform: translate(calc(var(--tx, 0px) + 3px), var(--ty, 0px));
   }
 }
 
 @keyframes target-pulse {
   0% {
-    transform: scale(1);
+    transform: translate(var(--tx, 0px), var(--ty, 0px)) scale(1);
     filter: brightness(1);
     box-shadow:
       inset 0 8px 12px rgb(255 255 255 / 14%),
@@ -518,7 +521,7 @@ h1 {
       0 10px 20px rgb(0 0 0 / 22%);
   }
   60% {
-    transform: scale(1.08);
+    transform: translate(var(--tx, 0px), var(--ty, 0px)) scale(1.08);
     filter: brightness(1.45);
     box-shadow:
       inset 0 8px 12px rgb(255 255 255 / 18%),
@@ -528,7 +531,7 @@ h1 {
       0 0 16px rgb(253 224 71 / 0.6);
   }
   100% {
-    transform: scale(1);
+    transform: translate(var(--tx, 0px), var(--ty, 0px)) scale(1);
     filter: brightness(1.2);
   }
 }
