@@ -888,7 +888,9 @@ function dropAndFill() {
     for (let row = BOARD_SIZE - 1; row >= 0; row -= 1) {
       const candy = board[row][col];
       if (candy !== null) {
-        existing.push(candy);
+        // Scan bottom → top, but keep candies in top → bottom order so gravity compaction
+        // is stable (no vertical flipping/shuffling of existing pieces).
+        existing.unshift(candy);
       }
     }
 
