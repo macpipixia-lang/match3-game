@@ -549,7 +549,8 @@ function addSparklesFx(row, col, count, { hue = 60, power = 1 } = {}) {
     const dy = Math.sin(ang) * dist;
 
     const size = (2.2 + Math.random() * 2.4) * (0.95 + power * 0.25);
-    const dur = (200 + Math.random() * 120) * (1 / (0.85 + power * 0.15));
+    // Keep duration within CLEAR_DELAY_MS so the layer reset doesn't cut the tail.
+    const dur = (170 + Math.random() * 90) * (1 / (0.9 + power * 0.1));
 
     s.style.left = `${startX}px`;
     s.style.top = `${startY}px`;
