@@ -355,12 +355,20 @@ function ensurePieceEl(candyId, row, col) {
   let el = pieceElsById.get(candyId);
   if (el) return el;
 
+  // Prevent a 1-frame flash at (0,0) when the element is first appended.
+  // New gems are absolutely positioned at top/left 0 by default until we set transform.
   el = document.createElement('button');
   el.type = 'button';
   el.className = 'gem';
   el.dataset.id = String(candyId);
   el.dataset.row = String(row);
   el.dataset.col = String(col);
+  el.style.visibility = 'hidden';
+
+  // Set an initial transform synchronously before attaching to the DOM.
+  const pos = positionForCell(row, col);
+  el.style.transform = `translate(${pos.x}px, ${pos.y}px)`;
+
   el.setAttribute('aria-label', `Candy at row ${row + 1}, col ${col + 1}`);
   piecesEl.appendChild(el);
   pieceElsById.set(candyId, el);
@@ -393,6 +401,7 @@ function syncPiecesDom({ durationMs = 0 } = {}) {
 
       const pos = positionForCell(row, col);
       el.style.transform = `translate(${pos.x}px, ${pos.y}px)`;
+      el.style.visibility = 'visible';
     }
   }
 
@@ -1537,6 +1546,7 @@ async function resolveCascades(preferredSpawnCell, initialForcedContext = null) 
       el.classList.add('spawning');
       el.style.transitionDuration = '0ms';
       el.style.transform = `translate(${pos.x}px, ${pos.y}px) scale(0.98)`;
+      el.style.visibility = 'visible';
     }
 
     await nextFrame();
