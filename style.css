@@ -209,6 +209,10 @@ h1 {
   overflow: hidden;
 }
 
+.gem.spawning {
+  z-index: 2;
+}
+
 .gem::before {
   content: '';
   position: absolute;

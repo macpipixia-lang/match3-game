@@ -335,6 +335,96 @@ async function animateFlip(updateFn, durationMs) {
   await wait(durationMs);
 }
 
+function buildWasEmptyMatrix() {
+  return Array.from({ length: BOARD_SIZE }, (_, row) =>
+    Array.from({ length: BOARD_SIZE }, (_, col) => board[row][col] === null),
+  );
+}
+
+function computeSpawnOffsetPx(row, col) {
+  const rect00 = cachedCellRects?.[0]?.[0];
+  const rect10 = cachedCellRects?.[1]?.[0];
+  const rect0c = cachedCellRects?.[0]?.[col];
+  const rect1c = cachedCellRects?.[1]?.[col];
+
+  let stepY = 0;
+  if (rect0c && rect1c) {
+    stepY = rect1c.top - rect0c.top;
+  }
+
+  if (!Number.isFinite(stepY) || stepY <= 0) {
+    const height = rect00?.height || cellEls?.[0]?.[0]?.getBoundingClientRect().height || 0;
+    let gap = 0;
+    if (rect00 && rect10) {
+      gap = Math.max(0, rect10.top - rect00.top - rect00.height);
+    } else {
+      const rawGap = window.getComputedStyle(document.documentElement).getPropertyValue('--gap');
+      gap = Number.parseFloat(rawGap) || 0;
+    }
+    stepY = height + gap;
+  }
+
+  const offset = stepY * (row + 1);
+  return Math.max(0, offset);
+}
+
+async function animateDropAndSpawn(updateFn, durationMs) {
+  // Like animateFlip, but also animates newly spawned candies falling from above.
+  const first = captureCellRects();
+  let spawnedCells = [];
+  updateFn((cells) => {
+    spawnedCells = Array.isArray(cells) ? cells : [];
+  });
+  const last = captureCellRects();
+
+  for (let row = 0; row < BOARD_SIZE; row += 1) {
+    for (let col = 0; col < BOARD_SIZE; col += 1) {
+      const el = cellEls[row][col];
+      const dx = first[row][col].left - last[row][col].left;
+      const dy = first[row][col].top - last[row][col].top;
+      el.style.transitionDuration = '0ms';
+      el.style.transform = (dx || dy) ? `translate(${dx}px, ${dy}px)` : '';
+    }
+  }
+
+  await nextFrame();
+
+  // Let the regular drop FLIP play first.
+  for (let row = 0; row < BOARD_SIZE; row += 1) {
+    for (let col = 0; col < BOARD_SIZE; col += 1) {
+      const el = cellEls[row][col];
+      el.style.transitionDuration = `${durationMs}ms`;
+      el.style.transform = '';
+    }
+  }
+
+  // Then override spawned cells to start above and fall into place.
+  for (const cell of spawnedCells) {
+    const el = cellEls?.[cell.row]?.[cell.col];
+    if (!el) continue;
+    const offset = computeSpawnOffsetPx(cell.row, cell.col);
+    el.classList.add('spawning');
+    el.style.transitionDuration = '0ms';
+    el.style.transform = offset > 0 ? `translateY(${-offset}px) scale(0.98)` : 'scale(0.98)';
+  }
+
+  await nextFrame();
+  for (const cell of spawnedCells) {
+    const el = cellEls?.[cell.row]?.[cell.col];
+    if (!el) continue;
+    el.style.transitionDuration = `${durationMs}ms`;
+    el.style.transform = '';
+  }
+
+  await wait(durationMs);
+
+  for (const cell of spawnedCells) {
+    const el = cellEls?.[cell.row]?.[cell.col];
+    if (!el) continue;
+    el.classList.remove('spawning');
+  }
+}
+
 function renderBoard() {
   updateBoardDom();
 }
@@ -1422,10 +1512,25 @@ async function resolveCascades(preferredSpawnCell, initialForcedContext = null) 
       }
     }
 
-    await animateFlip(() => {
+    await animateDropAndSpawn((setSpawnedCells) => {
       applySpawnPlans(spawnPlans);
+
+      const wasEmpty = buildWasEmptyMatrix();
       dropAndFill();
+
+      const spawnedCells = [];
+      for (let row = 0; row < BOARD_SIZE; row += 1) {
+        for (let col = 0; col < BOARD_SIZE; col += 1) {
+          if (wasEmpty[row][col] && board[row][col] !== null) {
+            spawnedCells.push({ row, col });
+          }
+        }
+      }
+
       renderBoard();
+      if (typeof setSpawnedCells === 'function') {
+        setSpawnedCells(spawnedCells);
+      }
     }, DROP_DELAY_MS);
   }
 }
