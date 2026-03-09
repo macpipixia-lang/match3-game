@@ -81,3 +81,46 @@ A **Debug** toggle is available in the HUD.
 - When **Debug: On**, every time you reset the game the board is regenerated and then **20 random distinct cells** are converted into random special candies (striped row/col, wrapped, or color bomb).
 - The state is persisted in `localStorage` under `match3.debugEnabled`.
 - Toggling Debug **always triggers an immediate reset**.
+
+---
+
+## 更新记录 / Changelog
+
+把每次更新的功能都列到readme.md上，包括这句话。
+
+> Notes: 这里用“时间从旧到新”的方式记录关键更新，方便快速回顾最近加了什么。
+
+- **Early baseline / 初始版本**
+  - Offline-first：直接打开 `index.html` 即可游玩（无依赖、无需本地服务）。
+  - Built-in levels：目标分数 + 步数限制，胜利/失败覆盖层（Next/Retry），进度与最高分持久化。
+  - Special candies & combo swaps：条纹糖 / 包装糖 / 彩虹炸弹，以及多种组合交换效果。
+
+- **UI / 交互统一（UI unify）**
+  - 统一 HUD/按钮与提示的交互体验，减少不同状态下的 UI 分裂。
+  - 修正提示层（toast/overlay）在复杂动画/大消除场景下的层级显示问题（toast z-index fix）。
+
+- **调试能力（Debug toggle + seed specials）**
+  - 增加 Debug 开关：开启后 reset 会随机播种 **20 个特殊糖**，便于快速测试连锁和组合交换。
+
+- **美术与标识（art icons + wrapped indicator）**
+  - 引入更清晰的图标/素材呈现。
+  - 包装糖（Wrapped）增加更明显的外观指示（wrapped indicator）。
+
+- **粒子与特效（sparkles particles + FX cache）**
+  - 增加 sparkles 粒子效果，提升消除反馈。
+  - FX geometry cache：缓存特效几何/路径等计算结果，减少重复开销。
+
+- **性能优化（performance: DOM caching + FLIP drop）**
+  - DOM caching：缓存常用 DOM 查询/引用，降低频繁操作成本。
+  - FLIP drop：下落/补位使用 FLIP 思路减少布局抖动，提升动画流畅度。
+  - 大范围消除场景的性能优化（perf big clear，如果存在）。
+
+- **逻辑修复（clear/fill fixes）**
+  - out-of-bounds clear fix：修复清除逻辑在边界/越界情况下的异常。
+  - refill fall（如果仍适用）：补充新糖果并自然下落填充空位，保证盘面稳定。
+  - clear fixes：修复多段清除/连锁触发下的状态与表现一致性。
+
+- **重力一致性分支合并（gravity-unified-dev）**
+  - pieces overlay true gravity：棋子覆盖层/渲染与“真实重力”一致，避免视觉与逻辑不同步。
+  - column order fix：修复列处理顺序导致的落子/补位异常。
+  - keep translation during clear animations：清除动画期间保持位移/transform，避免跳变。

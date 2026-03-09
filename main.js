@@ -27,6 +27,7 @@ const LEVELS = [
 ];
 
 const boardEl = document.getElementById('board');
+const piecesEl = document.getElementById('pieces');
 const fxEl = document.getElementById('fx');
 const scoreEl = document.getElementById('score');
 const targetScoreEl = document.getElementById('targetScore');
@@ -55,10 +56,17 @@ let currentLevelIndex = 0;
 let bestScore = 0;
 let pendingOutcome = null;
 
-// DOM cache for performance: create 8x8 buttons once, then only update classes.
+// DOM cache for performance: create 8x8 invisible cell buttons once.
 let cellEls = null; // HTMLElement[BOARD_SIZE][BOARD_SIZE]
-let cachedBoardRect = null;
+let cachedBoardWrapRect = null;
 let cachedCellRects = null;
+let cachedCellPositions = null; // { x, y }[BOARD_SIZE][BOARD_SIZE] relative to board-wrap
+let cachedStepX = null;
+let cachedStepY = null;
+
+// Pieces overlay: each candy is its own absolutely-positioned element.
+let candyIdSeq = 0;
+const pieceElsById = new Map(); // id -> HTMLElement
 
 const missingSfx = new Set();
 const sfxPool = new Map();
@@ -67,8 +75,14 @@ function randGem() {
   return GEM_TYPES[Math.floor(Math.random() * GEM_TYPES.length)];
 }
 
+function nextCandyId() {
+  candyIdSeq += 1;
+  return candyIdSeq;
+}
+
 function createNormalCandy(color = randGem()) {
   return {
+    id: nextCandyId(),
     kind: 'normal',
     color,
   };
@@ -76,6 +90,7 @@ function createNormalCandy(color = randGem()) {
 
 function createStripedCandy(color, orientation) {
   return {
+    id: nextCandyId(),
     kind: 'striped',
     color,
     orientation, // 'row' | 'col'
@@ -84,6 +99,7 @@ function createStripedCandy(color, orientation) {
 
 function createWrappedCandy(color) {
   return {
+    id: nextCandyId(),
     kind: 'wrapped',
     color,
   };
@@ -91,6 +107,7 @@ function createWrappedCandy(color) {
 
 function createColorBomb(color) {
   return {
+    id: nextCandyId(),
     kind: 'colorBomb',
     color,
   };
@@ -243,31 +260,50 @@ function ensureBoardDom() {
     for (let col = 0; col < BOARD_SIZE; col += 1) {
       const btn = document.createElement('button');
       btn.type = 'button';
+      btn.className = 'cell';
       btn.dataset.row = String(row);
       btn.dataset.col = String(col);
+      btn.setAttribute('aria-hidden', 'true');
       cellEls[row][col] = btn;
       frag.appendChild(btn);
     }
   }
   boardEl.innerHTML = '';
   boardEl.appendChild(frag);
-  
-  if (!cachedBoardRect) {
+
+  if (!cachedBoardWrapRect) {
     cacheBoardGeometry();
   }
 }
 
 function cacheBoardGeometry() {
   if (!cellEls) return;
-  cachedBoardRect = boardEl.getBoundingClientRect();
+  const wrap = boardEl.closest('.board-wrap');
+  cachedBoardWrapRect = wrap ? wrap.getBoundingClientRect() : boardEl.getBoundingClientRect();
+
   if (!cachedCellRects) {
     cachedCellRects = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(null));
   }
+  if (!cachedCellPositions) {
+    cachedCellPositions = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(null));
+  }
+
   for (let row = 0; row < BOARD_SIZE; row += 1) {
     for (let col = 0; col < BOARD_SIZE; col += 1) {
-      cachedCellRects[row][col] = cellEls[row][col].getBoundingClientRect();
+      const rect = cellEls[row][col].getBoundingClientRect();
+      cachedCellRects[row][col] = rect;
+      cachedCellPositions[row][col] = {
+        x: rect.left - cachedBoardWrapRect.left,
+        y: rect.top - cachedBoardWrapRect.top,
+      };
     }
   }
+
+  const p00 = cachedCellPositions?.[0]?.[0];
+  const p01 = cachedCellPositions?.[0]?.[1];
+  const p10 = cachedCellPositions?.[1]?.[0];
+  if (p00 && p01) cachedStepX = p01.x - p00.x;
+  if (p00 && p10) cachedStepY = p10.y - p00.y;
 }
 
 window.addEventListener('resize', () => {
@@ -276,29 +312,120 @@ window.addEventListener('resize', () => {
 
 function updateBoardDom() {
   ensureBoardDom();
+  // Cells are used only for layout + geometry (actual pieces live in #pieces).
   for (let row = 0; row < BOARD_SIZE; row += 1) {
     for (let col = 0; col < BOARD_SIZE; col += 1) {
       const btn = cellEls[row][col];
-      const candy = board[row][col];
-      const specialLabel = candy?.kind === 'wrapped' ? ' (Wrapped candy)' : '';
-      const label = candy
-        ? `Candy at row ${row + 1}, col ${col + 1}${specialLabel}`
-        : `Empty at row ${row + 1}, col ${col + 1}`;
-      btn.className = gemClasses(row, col);
-      btn.setAttribute('aria-label', label);
+      btn.className = 'cell';
     }
   }
 }
 
-function captureCellRects() {
+function positionForCell(row, col) {
   ensureBoardDom();
-  const rects = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(null));
+  if (!cachedCellPositions) cacheBoardGeometry();
+
+  const base = cachedCellPositions?.[Math.max(0, Math.min(BOARD_SIZE - 1, row))]?.[col];
+  const top = cachedCellPositions?.[0]?.[col];
+
+  if (!base || !top) {
+    // Fallback: assume grid starts at (0,0) relative to wrap.
+    const cellSize = Number.parseFloat(window.getComputedStyle(document.documentElement).getPropertyValue('--cell-size')) || 56;
+    const gap = Number.parseFloat(window.getComputedStyle(document.documentElement).getPropertyValue('--gap')) || 6;
+    const step = cellSize + gap;
+    return { x: col * step, y: row * step };
+  }
+
+  if (row >= 0 && row < BOARD_SIZE) {
+    return { x: base.x, y: base.y };
+  }
+
+  const stepY = Number.isFinite(cachedStepY) && cachedStepY !== 0 ? cachedStepY : base.y - top.y;
+  return {
+    x: top.x,
+    y: top.y + stepY * row,
+  };
+}
+
+function ensurePieceEl(candyId, row, col) {
+  if (!piecesEl) {
+    throw new Error('#pieces layer missing');
+  }
+
+  let el = pieceElsById.get(candyId);
+  if (el) return el;
+
+  // Prevent a 1-frame flash at (0,0) when the element is first appended.
+  // New gems are absolutely positioned at top/left 0 by default until we set transform.
+  el = document.createElement('button');
+  el.type = 'button';
+  el.className = 'gem';
+  el.dataset.id = String(candyId);
+  el.dataset.row = String(row);
+  el.dataset.col = String(col);
+  el.style.visibility = 'hidden';
+
+  // Set initial position variables synchronously before attaching to the DOM.
+  // Positioning is driven by CSS `transform: translate(var(--tx), var(--ty))` so animations don't override translation.
+  const pos = positionForCell(row, col);
+  el.style.setProperty('--tx', `${pos.x}px`);
+  el.style.setProperty('--ty', `${pos.y}px`);
+
+  el.setAttribute('aria-label', `Candy at row ${row + 1}, col ${col + 1}`);
+  piecesEl.appendChild(el);
+  pieceElsById.set(candyId, el);
+  return el;
+}
+
+function syncPiecesDom({ durationMs = 0 } = {}) {
+  ensureBoardDom();
+  if (!piecesEl) return;
+
+  const seen = new Set();
+
   for (let row = 0; row < BOARD_SIZE; row += 1) {
     for (let col = 0; col < BOARD_SIZE; col += 1) {
-      rects[row][col] = cellEls[row][col].getBoundingClientRect();
+      const candy = board[row][col];
+      if (!candy) continue;
+      seen.add(candy.id);
+
+      const el = ensurePieceEl(candy.id, row, col);
+      el.dataset.row = String(row);
+      el.dataset.col = String(col);
+
+      const specialLabel = candy?.kind === 'wrapped' ? ' (Wrapped candy)' : '';
+      el.setAttribute('aria-label', `Candy at row ${row + 1}, col ${col + 1}${specialLabel}`);
+      el.className = gemClasses(row, col);
+
+      el.style.transitionProperty = 'transform, opacity, filter';
+      el.style.transitionDuration = `${durationMs}ms`;
+      el.style.transitionTimingFunction = 'cubic-bezier(0.18, 0.85, 0.32, 1)';
+
+      const pos = positionForCell(row, col);
+      el.style.setProperty('--tx', `${pos.x}px`);
+      el.style.setProperty('--ty', `${pos.y}px`);
+      el.style.visibility = 'visible';
     }
   }
-  return rects;
+
+  // Remove stale piece elements (should be rare).
+  // Perf: batch removals into a single timer to avoid scheduling dozens of timeouts
+  // during large clears / cascades.
+  const stale = [];
+  for (const [id, el] of pieceElsById.entries()) {
+    if (seen.has(id)) continue;
+    el.classList.add('clearing');
+    stale.push({ id, el });
+  }
+
+  if (stale.length > 0) {
+    window.setTimeout(() => {
+      stale.forEach(({ id, el }) => {
+        el.remove();
+        pieceElsById.delete(id);
+      });
+    }, CLEAR_DELAY_MS);
+  }
 }
 
 function nextFrame() {
@@ -306,127 +433,16 @@ function nextFrame() {
 }
 
 async function animateFlip(updateFn, durationMs) {
-  // FLIP animation: First → Last → Invert → Play
-  const first = captureCellRects();
+  // Pieces are absolutely positioned; simply updating transforms yields the animation.
   updateFn();
-  const last = captureCellRects();
-
-  // Invert: move elements back to where they were.
-  for (let row = 0; row < BOARD_SIZE; row += 1) {
-    for (let col = 0; col < BOARD_SIZE; col += 1) {
-      const el = cellEls[row][col];
-      const dx = first[row][col].left - last[row][col].left;
-      const dy = first[row][col].top - last[row][col].top;
-      el.style.transitionDuration = '0ms';
-      el.style.transform = (dx || dy) ? `translate(${dx}px, ${dy}px)` : '';
-    }
-  }
-
-  // Play: on next frame, clear transform so CSS transition animates to the new position.
-  await nextFrame();
-  for (let row = 0; row < BOARD_SIZE; row += 1) {
-    for (let col = 0; col < BOARD_SIZE; col += 1) {
-      const el = cellEls[row][col];
-      el.style.transitionDuration = `${durationMs}ms`;
-      el.style.transform = '';
-    }
-  }
-
+  renderBoard({ durationMs });
   await wait(durationMs);
 }
 
-function buildWasEmptyMatrix() {
-  return Array.from({ length: BOARD_SIZE }, (_, row) =>
-    Array.from({ length: BOARD_SIZE }, (_, col) => board[row][col] === null),
-  );
-}
 
-function computeSpawnOffsetPx(row, col) {
-  const rect00 = cachedCellRects?.[0]?.[0];
-  const rect10 = cachedCellRects?.[1]?.[0];
-  const rect0c = cachedCellRects?.[0]?.[col];
-  const rect1c = cachedCellRects?.[1]?.[col];
-
-  let stepY = 0;
-  if (rect0c && rect1c) {
-    stepY = rect1c.top - rect0c.top;
-  }
-
-  if (!Number.isFinite(stepY) || stepY <= 0) {
-    const height = rect00?.height || cellEls?.[0]?.[0]?.getBoundingClientRect().height || 0;
-    let gap = 0;
-    if (rect00 && rect10) {
-      gap = Math.max(0, rect10.top - rect00.top - rect00.height);
-    } else {
-      const rawGap = window.getComputedStyle(document.documentElement).getPropertyValue('--gap');
-      gap = Number.parseFloat(rawGap) || 0;
-    }
-    stepY = height + gap;
-  }
-
-  const offset = stepY * (row + 1);
-  return Math.max(0, offset);
-}
-
-async function animateDropAndSpawn(updateFn, durationMs) {
-  // Like animateFlip, but also animates newly spawned candies falling from above.
-  const first = captureCellRects();
-  let spawnedCells = [];
-  updateFn((cells) => {
-    spawnedCells = Array.isArray(cells) ? cells : [];
-  });
-  const last = captureCellRects();
-
-  for (let row = 0; row < BOARD_SIZE; row += 1) {
-    for (let col = 0; col < BOARD_SIZE; col += 1) {
-      const el = cellEls[row][col];
-      const dx = first[row][col].left - last[row][col].left;
-      const dy = first[row][col].top - last[row][col].top;
-      el.style.transitionDuration = '0ms';
-      el.style.transform = (dx || dy) ? `translate(${dx}px, ${dy}px)` : '';
-    }
-  }
-
-  await nextFrame();
-
-  // Let the regular drop FLIP play first.
-  for (let row = 0; row < BOARD_SIZE; row += 1) {
-    for (let col = 0; col < BOARD_SIZE; col += 1) {
-      const el = cellEls[row][col];
-      el.style.transitionDuration = `${durationMs}ms`;
-      el.style.transform = '';
-    }
-  }
-
-  // Then override spawned cells to start above and fall into place.
-  for (const cell of spawnedCells) {
-    const el = cellEls?.[cell.row]?.[cell.col];
-    if (!el) continue;
-    const offset = computeSpawnOffsetPx(cell.row, cell.col);
-    el.classList.add('spawning');
-    el.style.transitionDuration = '0ms';
-    el.style.transform = offset > 0 ? `translateY(${-offset}px) scale(0.98)` : 'scale(0.98)';
-  }
-
-  await nextFrame();
-  for (const cell of spawnedCells) {
-    const el = cellEls?.[cell.row]?.[cell.col];
-    if (!el) continue;
-    el.style.transitionDuration = `${durationMs}ms`;
-    el.style.transform = '';
-  }
-
-  await wait(durationMs);
-
-  for (const cell of spawnedCells) {
-    const el = cellEls?.[cell.row]?.[cell.col];
-    if (!el) continue;
-    el.classList.remove('spawning');
-  }
-}
-
-function renderBoard() {
+function renderBoard({ durationMs = 0 } = {}) {
   updateBoardDom();
+  syncPiecesDom({ durationMs });
 }
 
 function findMatches() {
@@ -652,6 +668,11 @@ function clearFxLayer() {
 
 const SPARKLE_MAX_PER_WAVE = 120;
 
+// Perf: cap sparkle DOM nodes for big clears.
+// Keep particles (visual feedback) but prevent large clears from creating hundreds of nodes at once.
+const SPARKLE_MAX_PER_CLEAR = 80;
+const SPARKLE_SKIP_THRESHOLD = 24;
+
 function hueForGemColor(color) {
   // Map our 0..5 palette to a visually distinct hue range.
   // (Hand-tuned for “candy” colors; no external deps.)
@@ -674,10 +695,10 @@ function hueForGemColor(color) {
 }
 
 function addSparklesFx(row, col, count, { hue = 60, power = 1 } = {}) {
-  if (!fxEl || !cachedBoardRect || !cachedCellRects) return 0;
+  if (!fxEl || !cachedBoardWrapRect || !cachedCellRects) return 0;
   if (!count || count <= 0) return 0;
 
-  const boardRect = cachedBoardRect;
+  const boardRect = cachedBoardWrapRect;
   const cellRect = cachedCellRects[row][col];
 
   const baseX = cellRect.left - boardRect.left + cellRect.width / 2;
@@ -727,9 +748,9 @@ function addSparklesFx(row, col, count, { hue = 60, power = 1 } = {}) {
 }
 
 function addBeamFx(kind, row, col) {
-  if (!fxEl || !cachedBoardRect || !cachedCellRects) return;
+  if (!fxEl || !cachedBoardWrapRect || !cachedCellRects) return;
 
-  const boardRect = cachedBoardRect;
+  const boardRect = cachedBoardWrapRect;
   const cellRect = cachedCellRects[row][col];
 
   const beam = document.createElement('div');
@@ -749,9 +770,9 @@ function addBeamFx(kind, row, col) {
 }
 
 function addPulseFx(row, col) {
-  if (!fxEl || !cachedBoardRect || !cachedCellRects) return;
+  if (!fxEl || !cachedBoardWrapRect || !cachedCellRects) return;
 
-  const boardRect = cachedBoardRect;
+  const boardRect = cachedBoardWrapRect;
   const cellRect = cachedCellRects[row][col];
 
   const pulse = document.createElement('div');
@@ -766,9 +787,9 @@ function addPulseFx(row, col) {
 }
 
 function addWrappedBlastFx(row, col) {
-  if (!fxEl || !cachedBoardRect || !cachedCellRects) return;
+  if (!fxEl || !cachedBoardWrapRect || !cachedCellRects) return;
 
-  const boardRect = cachedBoardRect;
+  const boardRect = cachedBoardWrapRect;
   const cellRect = cachedCellRects[row][col];
 
   const blast = document.createElement('div');
@@ -812,18 +833,30 @@ function spawnFxForClearSet(matches, fxOverrides = null) {
   pulses.forEach((p) => addPulseFx(p.row, p.col));
   wrappedBlasts.forEach((p) => addWrappedBlastFx(p.row, p.col));
 
-  // Lightweight sparkle particles for every cleared cell.
+  // Lightweight sparkle particles for cleared cells.
   // Performance rule: keep each wave under a hard DOM budget.
-  let budget = SPARKLE_MAX_PER_WAVE;
-  let basePerCell = 3;
-  if (clearCount >= 8) basePerCell = 4;
-  if (clearCount >= 12) basePerCell = 5;
+  // For huge clears, sample cells so we stay smooth.
+  let budget = Math.min(SPARKLE_MAX_PER_WAVE, SPARKLE_MAX_PER_CLEAR);
 
-  // Guarantee we don't exceed the wave budget.
-  const perCellCap = Math.max(1, Math.floor(budget / Math.max(1, clearCount)));
+  // Decide how many cells get sparkles for this clear.
+  const matchKeys = [...matches];
+  const shouldSample = clearCount >= SPARKLE_SKIP_THRESHOLD;
+  let basePerCell = shouldSample ? 2 : 3;
+  if (!shouldSample) {
+    if (clearCount >= 8) basePerCell = 4;
+    if (clearCount >= 12) basePerCell = 5;
+  }
+
+  // If we'd exceed our budget, sample every Nth cell.
+  const estCellsAtBase = Math.max(1, Math.floor(budget / Math.max(1, basePerCell)));
+  const step = Math.max(1, Math.ceil(clearCount / estCellsAtBase));
+  const sparkleKeys = step === 1 ? matchKeys : matchKeys.filter((_, idx) => idx % step === 0);
+
+  // Guarantee we don't exceed the budget.
+  const perCellCap = Math.max(1, Math.floor(budget / Math.max(1, sparkleKeys.length)));
   basePerCell = Math.min(basePerCell, perCellCap);
 
-  matches.forEach((key) => {
+  sparkleKeys.forEach((key) => {
     if (budget <= 0) return;
 
     const { row, col } = parseKey(key);
@@ -855,7 +888,8 @@ async function animateClear(matches, fxOverrides = null) {
   matches.forEach((key) => {
     const { row, col } = parseKey(key);
     if (!inBounds(row, col)) return;
-    const el = cellEls?.[row]?.[col];
+    const candy = board?.[row]?.[col];
+    const el = candy ? pieceElsById.get(candy.id) : null;
     if (el) {
       el.classList.add('clearing');
     }
@@ -883,23 +917,39 @@ function removeMatches(matches) {
 }
 
 function dropAndFill() {
+  // Mutates board to its post-gravity state and returns info for newly spawned candies.
+  // Spawn rows are negative so pieces can start above the board and fall in.
+  const spawns = [];
+
   for (let col = 0; col < BOARD_SIZE; col += 1) {
-    const compacted = [];
+    const existing = [];
     for (let row = BOARD_SIZE - 1; row >= 0; row -= 1) {
       const candy = board[row][col];
       if (candy !== null) {
-        compacted.push(candy);
+        // Scan bottom → top, but keep candies in top → bottom order so gravity compaction
+        // is stable (no vertical flipping/shuffling of existing pieces).
+        existing.unshift(candy);
       }
     }
 
-    while (compacted.length < BOARD_SIZE) {
-      compacted.push(createNormalCandy());
+    const missing = BOARD_SIZE - existing.length;
+    const newCandies = Array.from({ length: missing }, () => createNormalCandy());
+
+    const finalColumn = [...newCandies, ...existing].slice(0, BOARD_SIZE);
+
+    for (let row = 0; row < BOARD_SIZE; row += 1) {
+      board[row][col] = finalColumn[row] ?? null;
     }
 
-    for (let row = BOARD_SIZE - 1, i = 0; row >= 0; row -= 1, i += 1) {
-      board[row][col] = compacted[i];
+    for (let i = 0; i < newCandies.length; i += 1) {
+      const candy = newCandies[i];
+      const finalRow = i;
+      const spawnRow = i - missing; // e.g. missing=3 => rows -3,-2,-1
+      spawns.push({ candy, col, finalRow, spawnRow });
     }
   }
+
+  return spawns;
 }
 
 function collectColorCells(color) {
@@ -1512,26 +1562,31 @@ async function resolveCascades(preferredSpawnCell, initialForcedContext = null) 
       }
     }
 
-    await animateDropAndSpawn((setSpawnedCells) => {
+    // True gravity: create new candies above the board and let *all* candies fall together.
+    const spawns = (() => {
       applySpawnPlans(spawnPlans);
+      return dropAndFill();
+    })();
 
-      const wasEmpty = buildWasEmptyMatrix();
-      dropAndFill();
+    // Set up newly spawned pieces above the board before animating into their final slots.
+    for (const spawn of spawns) {
+      const el = ensurePieceEl(spawn.candy.id, spawn.finalRow, spawn.col);
+      const pos = positionForCell(spawn.spawnRow, spawn.col);
+      el.classList.add('spawning');
+      el.style.transitionDuration = '0ms';
+      el.style.setProperty('--tx', `${pos.x}px`);
+      el.style.setProperty('--ty', `${pos.y}px`);
+      el.style.visibility = 'visible';
+    }
 
-      const spawnedCells = [];
-      for (let row = 0; row < BOARD_SIZE; row += 1) {
-        for (let col = 0; col < BOARD_SIZE; col += 1) {
-          if (wasEmpty[row][col] && board[row][col] !== null) {
-            spawnedCells.push({ row, col });
-          }
-        }
-      }
+    await nextFrame();
+    renderBoard({ durationMs: DROP_DELAY_MS });
+    await wait(DROP_DELAY_MS);
 
-      renderBoard();
-      if (typeof setSpawnedCells === 'function') {
-        setSpawnedCells(spawnedCells);
-      }
-    }, DROP_DELAY_MS);
+    for (const spawn of spawns) {
+      const el = pieceElsById.get(spawn.candy.id);
+      if (el) el.classList.remove('spawning');
+    }
   }
 }
 
@@ -1539,7 +1594,6 @@ async function trySwap(from, to) {
   isLocked = true;
   await animateFlip(() => {
     swapCells(from, to);
-    renderBoard();
   }, 140);
 
   const comboContext = buildComboClearContext(from, to);
@@ -1562,11 +1616,13 @@ async function trySwap(from, to) {
     await animateFlip(() => {
       swapCells(from, to);
       selected = null;
-      renderBoard();
     }, 140);
 
-    const a = cellEls[from.row][from.col];
-    const b = cellEls[to.row][to.col];
+    const candyA = board?.[from.row]?.[from.col];
+    const candyB = board?.[to.row]?.[to.col];
+
+    const a = candyA ? pieceElsById.get(candyA.id) : null;
+    const b = candyB ? pieceElsById.get(candyB.id) : null;
 
     if (a) {
       a.classList.add('invalid');
@@ -1593,11 +1649,13 @@ async function trySwap(from, to) {
 }
 
 async function onGemClick(event) {
-  const target = event.target;
-  if (!(target instanceof HTMLElement)) {
+  const rawTarget = event.target;
+  if (!(rawTarget instanceof HTMLElement)) {
     return;
   }
-  if (!target.classList.contains('gem') || isLocked) {
+
+  const target = rawTarget.closest('button.gem');
+  if (!target || isLocked) {
     return;
   }
 
@@ -1634,6 +1692,10 @@ function resetGame() {
   selected = null;
   isLocked = false;
   pendingOutcome = null;
+
+  pieceElsById.clear();
+  if (piecesEl) piecesEl.innerHTML = '';
+
   generateBoardWithoutMatches();
   seedDebugSpecialCandies();
   updateHud();
@@ -1645,7 +1707,7 @@ function resetGame() {
   }
 }
 
-boardEl.addEventListener('click', (event) => {
+piecesEl?.addEventListener('click', (event) => {
   onGemClick(event).catch(() => {
     isLocked = false;
   });
