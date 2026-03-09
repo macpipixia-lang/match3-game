@@ -54,6 +54,8 @@ let pendingOutcome = null;
 
 // DOM cache for performance: create 8x8 buttons once, then only update classes.
 let cellEls = null; // HTMLElement[BOARD_SIZE][BOARD_SIZE]
+let cachedBoardRect = null;
+let cachedCellRects = null;
 
 const missingSfx = new Set();
 const sfxPool = new Map();
@@ -200,7 +202,28 @@ function ensureBoardDom() {
   }
   boardEl.innerHTML = '';
   boardEl.appendChild(frag);
+  
+  if (!cachedBoardRect) {
+    cacheBoardGeometry();
+  }
 }
+
+function cacheBoardGeometry() {
+  if (!cellEls) return;
+  cachedBoardRect = boardEl.getBoundingClientRect();
+  if (!cachedCellRects) {
+    cachedCellRects = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(null));
+  }
+  for (let row = 0; row < BOARD_SIZE; row += 1) {
+    for (let col = 0; col < BOARD_SIZE; col += 1) {
+      cachedCellRects[row][col] = cellEls[row][col].getBoundingClientRect();
+    }
+  }
+}
+
+window.addEventListener('resize', () => {
+  if (cellEls) cacheBoardGeometry();
+});
 
 function updateBoardDom() {
   ensureBoardDom();
@@ -477,12 +500,10 @@ function clearFxLayer() {
 }
 
 function addBeamFx(kind, row, col) {
-  if (!fxEl) return;
-  const cell = boardEl.querySelector(`[data-row="${row}"][data-col="${col}"]`);
-  if (!cell) return;
+  if (!fxEl || !cachedBoardRect || !cachedCellRects) return;
 
-  const boardRect = boardEl.getBoundingClientRect();
-  const cellRect = cell.getBoundingClientRect();
+  const boardRect = cachedBoardRect;
+  const cellRect = cachedCellRects[row][col];
 
   const beam = document.createElement('div');
   beam.className = `beam ${kind}`;
@@ -501,12 +522,10 @@ function addBeamFx(kind, row, col) {
 }
 
 function addPulseFx(row, col) {
-  if (!fxEl) return;
-  const cell = boardEl.querySelector(`[data-row="${row}"][data-col="${col}"]`);
-  if (!cell) return;
+  if (!fxEl || !cachedBoardRect || !cachedCellRects) return;
 
-  const boardRect = boardEl.getBoundingClientRect();
-  const cellRect = cell.getBoundingClientRect();
+  const boardRect = cachedBoardRect;
+  const cellRect = cachedCellRects[row][col];
 
   const pulse = document.createElement('div');
   pulse.className = 'pulse';
@@ -520,12 +539,10 @@ function addPulseFx(row, col) {
 }
 
 function addWrappedBlastFx(row, col) {
-  if (!fxEl) return;
-  const cell = boardEl.querySelector(`[data-row="${row}"][data-col="${col}"]`);
-  if (!cell) return;
+  if (!fxEl || !cachedBoardRect || !cachedCellRects) return;
 
-  const boardRect = boardEl.getBoundingClientRect();
-  const cellRect = cell.getBoundingClientRect();
+  const boardRect = cachedBoardRect;
+  const cellRect = cachedCellRects[row][col];
 
   const blast = document.createElement('div');
   blast.className = 'wrapped-blast';
@@ -576,7 +593,7 @@ async function animateClear(matches, fxOverrides = null) {
 
   matches.forEach((key) => {
     const { row, col } = parseKey(key);
-    const el = boardEl.querySelector(`[data-row="${row}"][data-col="${col}"]`);
+    const el = cellEls[row][col];
     if (el) {
       el.classList.add('clearing');
     }
@@ -926,7 +943,7 @@ async function animatePreClearTargeting(targetKeys) {
   const targetedEls = [];
   targetKeys.forEach((key) => {
     const { row, col } = parseKey(key);
-    const el = boardEl.querySelector(`[data-row="${row}"][data-col="${col}"]`);
+    const el = cellEls[row][col];
     if (!el) return;
     el.classList.add('targeting');
     targetedEls.push(el);
