@@ -499,6 +499,81 @@ function clearFxLayer() {
   fxEl.innerHTML = '';
 }
 
+const SPARKLE_MAX_PER_WAVE = 120;
+
+function hueForGemColor(color) {
+  // Map our 0..5 palette to a visually distinct hue range.
+  // (Hand-tuned for “candy” colors; no external deps.)
+  switch (color) {
+    case 0:
+      return 6; // red
+    case 1:
+      return 212; // blue
+    case 2:
+      return 152; // green
+    case 3:
+      return 44; // amber
+    case 4:
+      return 278; // purple
+    case 5:
+      return 330; // pink
+    default:
+      return 60;
+  }
+}
+
+function addSparklesFx(row, col, count, { hue = 60, power = 1 } = {}) {
+  if (!fxEl || !cachedBoardRect || !cachedCellRects) return 0;
+  if (!count || count <= 0) return 0;
+
+  const boardRect = cachedBoardRect;
+  const cellRect = cachedCellRects[row][col];
+
+  const baseX = cellRect.left - boardRect.left + cellRect.width / 2;
+  const baseY = cellRect.top - boardRect.top + cellRect.height / 2;
+
+  const maxOffset = Math.max(6, cellRect.width * 0.18);
+  const maxTravel = Math.max(18, cellRect.width * 0.55) * power;
+
+  const frag = document.createDocumentFragment();
+  for (let i = 0; i < count; i += 1) {
+    const s = document.createElement('div');
+    s.className = 'sparkle';
+
+    const startX = baseX + (Math.random() * 2 - 1) * maxOffset;
+    const startY = baseY + (Math.random() * 2 - 1) * maxOffset;
+
+    const ang = Math.random() * Math.PI * 2;
+    const dist = (0.35 + Math.random() * 0.75) * maxTravel;
+    const dx = Math.cos(ang) * dist;
+    const dy = Math.sin(ang) * dist;
+
+    const size = (2.2 + Math.random() * 2.4) * (0.95 + power * 0.25);
+    const dur = (200 + Math.random() * 120) * (1 / (0.85 + power * 0.15));
+
+    s.style.left = `${startX}px`;
+    s.style.top = `${startY}px`;
+    s.style.setProperty('--dx', `${dx.toFixed(2)}px`);
+    s.style.setProperty('--dy', `${dy.toFixed(2)}px`);
+    s.style.setProperty('--s', `${size.toFixed(2)}px`);
+    s.style.setProperty('--dur', `${dur.toFixed(0)}ms`);
+    s.style.setProperty('--h', String(hue));
+
+    // Auto-cleanup to avoid FX DOM growth during combo chains.
+    s.addEventListener(
+      'animationend',
+      () => {
+        s.remove();
+      },
+      { once: true },
+    );
+
+    frag.appendChild(s);
+  }
+  fxEl.appendChild(frag);
+  return count;
+}
+
 function addBeamFx(kind, row, col) {
   if (!fxEl || !cachedBoardRect || !cachedCellRects) return;
 
@@ -563,6 +638,8 @@ function spawnFxForClearSet(matches, fxOverrides = null) {
   const pulses = [...(fxOverrides?.pulses || [])];
   const wrappedBlasts = [...(fxOverrides?.wrappedBlasts || [])];
 
+  const clearCount = matches.size;
+
   matches.forEach((key) => {
     const { row, col } = parseKey(key);
     const candy = board[row][col];
@@ -582,6 +659,38 @@ function spawnFxForClearSet(matches, fxOverrides = null) {
   colBeams.forEach((col) => addBeamFx('col', 0, col));
   pulses.forEach((p) => addPulseFx(p.row, p.col));
   wrappedBlasts.forEach((p) => addWrappedBlastFx(p.row, p.col));
+
+  // Lightweight sparkle particles for every cleared cell.
+  // Performance rule: keep each wave under a hard DOM budget.
+  let budget = SPARKLE_MAX_PER_WAVE;
+  let basePerCell = 3;
+  if (clearCount >= 8) basePerCell = 4;
+  if (clearCount >= 12) basePerCell = 5;
+
+  // Guarantee we don't exceed the wave budget.
+  const perCellCap = Math.max(1, Math.floor(budget / Math.max(1, clearCount)));
+  basePerCell = Math.min(basePerCell, perCellCap);
+
+  matches.forEach((key) => {
+    if (budget <= 0) return;
+
+    const { row, col } = parseKey(key);
+    const candy = board[row][col];
+    if (!candy) return;
+
+    const hue = hueForGemColor(candy.color);
+    const isSpecial = candy.kind !== 'normal';
+
+    let wanted = basePerCell;
+    if (isSpecial) wanted += 3;
+    if (clearCount >= BIG_CLEAR_SHAKE_THRESHOLD) wanted += 1;
+
+    wanted = Math.min(wanted, 10);
+    const actual = Math.min(wanted, budget);
+    const power = isSpecial ? 1.55 : clearCount >= 10 ? 1.25 : 1;
+
+    budget -= addSparklesFx(row, col, actual, { hue, power });
+  });
 }
 
 async function animateClear(matches, fxOverrides = null) {
