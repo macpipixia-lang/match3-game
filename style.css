@@ -179,31 +179,6 @@ h1 {
   box-shadow: var(--shadow-soft);
 }
 
-/* 8x8 invisible hit/geometry targets (actual pieces are in the overlay layer). */
-.cell {
-  width: var(--cell-size);
-  height: var(--cell-size);
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-md);
-  background: transparent;
-  pointer-events: none;
-}
-
-.pieces {
-  position: absolute;
-  inset: 0;
-  z-index: 5;
-  pointer-events: auto;
-  border-radius: var(--radius-md);
-}
-
-.pieces .gem {
-  position: absolute;
-  top: 0;
-  left: 0;
-}
-
 .fx {
   position: absolute;
   inset: 0;

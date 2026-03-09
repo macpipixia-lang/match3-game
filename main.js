@@ -27,7 +27,6 @@ const LEVELS = [
 ];
 
 const boardEl = document.getElementById('board');
-const piecesEl = document.getElementById('pieces');
 const fxEl = document.getElementById('fx');
 const scoreEl = document.getElementById('score');
 const targetScoreEl = document.getElementById('targetScore');
@@ -56,17 +55,10 @@ let currentLevelIndex = 0;
 let bestScore = 0;
 let pendingOutcome = null;
 
-// DOM cache for performance: create 8x8 invisible cell buttons once.
+// DOM cache for performance: create 8x8 buttons once, then only update classes.
 let cellEls = null; // HTMLElement[BOARD_SIZE][BOARD_SIZE]
-let cachedBoardWrapRect = null;
+let cachedBoardRect = null;
 let cachedCellRects = null;
-let cachedCellPositions = null; // { x, y }[BOARD_SIZE][BOARD_SIZE] relative to board-wrap
-let cachedStepX = null;
-let cachedStepY = null;
-
-// Pieces overlay: each candy is its own absolutely-positioned element.
-let candyIdSeq = 0;
-const pieceElsById = new Map(); // id -> HTMLElement
 
 const missingSfx = new Set();
 const sfxPool = new Map();
@@ -75,14 +67,8 @@ function randGem() {
   return GEM_TYPES[Math.floor(Math.random() * GEM_TYPES.length)];
 }
 
-function nextCandyId() {
-  candyIdSeq += 1;
-  return candyIdSeq;
-}
-
 function createNormalCandy(color = randGem()) {
   return {
-    id: nextCandyId(),
     kind: 'normal',
     color,
   };
@@ -90,7 +76,6 @@ function createNormalCandy(color = randGem()) {
 
 function createStripedCandy(color, orientation) {
   return {
-    id: nextCandyId(),
     kind: 'striped',
     color,
     orientation, // 'row' | 'col'
@@ -99,7 +84,6 @@ function createStripedCandy(color, orientation) {
 
 function createWrappedCandy(color) {
   return {
-    id: nextCandyId(),
     kind: 'wrapped',
     color,
   };
@@ -107,7 +91,6 @@ function createWrappedCandy(color) {
 
 function createColorBomb(color) {
   return {
-    id: nextCandyId(),
     kind: 'colorBomb',
     color,
   };
@@ -260,50 +243,31 @@ function ensureBoardDom() {
     for (let col = 0; col < BOARD_SIZE; col += 1) {
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'cell';
       btn.dataset.row = String(row);
       btn.dataset.col = String(col);
-      btn.setAttribute('aria-hidden', 'true');
       cellEls[row][col] = btn;
       frag.appendChild(btn);
     }
   }
   boardEl.innerHTML = '';
   boardEl.appendChild(frag);
-
-  if (!cachedBoardWrapRect) {
+  
+  if (!cachedBoardRect) {
     cacheBoardGeometry();
   }
 }
 
 function cacheBoardGeometry() {
   if (!cellEls) return;
-  const wrap = boardEl.closest('.board-wrap');
-  cachedBoardWrapRect = wrap ? wrap.getBoundingClientRect() : boardEl.getBoundingClientRect();
-
+  cachedBoardRect = boardEl.getBoundingClientRect();
   if (!cachedCellRects) {
     cachedCellRects = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(null));
   }
-  if (!cachedCellPositions) {
-    cachedCellPositions = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(null));
-  }
-
   for (let row = 0; row < BOARD_SIZE; row += 1) {
     for (let col = 0; col < BOARD_SIZE; col += 1) {
-      const rect = cellEls[row][col].getBoundingClientRect();
-      cachedCellRects[row][col] = rect;
-      cachedCellPositions[row][col] = {
-        x: rect.left - cachedBoardWrapRect.left,
-        y: rect.top - cachedBoardWrapRect.top,
-      };
+      cachedCellRects[row][col] = cellEls[row][col].getBoundingClientRect();
     }
   }
-
-  const p00 = cachedCellPositions?.[0]?.[0];
-  const p01 = cachedCellPositions?.[0]?.[1];
-  const p10 = cachedCellPositions?.[1]?.[0];
-  if (p00 && p01) cachedStepX = p01.x - p00.x;
-  if (p00 && p10) cachedStepY = p10.y - p00.y;
 }
 
 window.addEventListener('resize', () => {
@@ -312,103 +276,21 @@ window.addEventListener('resize', () => {
 
 function updateBoardDom() {
   ensureBoardDom();
-  // Cells are used only for layout + geometry (actual pieces live in #pieces).
   for (let row = 0; row < BOARD_SIZE; row += 1) {
     for (let col = 0; col < BOARD_SIZE; col += 1) {
       const btn = cellEls[row][col];
-      btn.className = 'cell';
-    }
-  }
-}
-
-function positionForCell(row, col) {
-  ensureBoardDom();
-  if (!cachedCellPositions) cacheBoardGeometry();
-
-  const base = cachedCellPositions?.[Math.max(0, Math.min(BOARD_SIZE - 1, row))]?.[col];
-  const top = cachedCellPositions?.[0]?.[col];
-
-  if (!base || !top) {
-    // Fallback: assume grid starts at (0,0) relative to wrap.
-    const cellSize = Number.parseFloat(window.getComputedStyle(document.documentElement).getPropertyValue('--cell-size')) || 56;
-    const gap = Number.parseFloat(window.getComputedStyle(document.documentElement).getPropertyValue('--gap')) || 6;
-    const step = cellSize + gap;
-    return { x: col * step, y: row * step };
-  }
-
-  if (row >= 0 && row < BOARD_SIZE) {
-    return { x: base.x, y: base.y };
-  }
-
-  const stepY = Number.isFinite(cachedStepY) && cachedStepY !== 0 ? cachedStepY : base.y - top.y;
-  return {
-    x: top.x,
-    y: top.y + stepY * row,
-  };
-}
-
-function ensurePieceEl(candyId, row, col) {
-  if (!piecesEl) {
-    throw new Error('#pieces layer missing');
-  }
-
-  let el = pieceElsById.get(candyId);
-  if (el) return el;
-
-  el = document.createElement('button');
-  el.type = 'button';
-  el.className = 'gem';
-  el.dataset.id = String(candyId);
-  el.dataset.row = String(row);
-  el.dataset.col = String(col);
-  el.setAttribute('aria-label', `Candy at row ${row + 1}, col ${col + 1}`);
-  piecesEl.appendChild(el);
-  pieceElsById.set(candyId, el);
-  return el;
-}
-
-function syncPiecesDom({ durationMs = 0 } = {}) {
-  ensureBoardDom();
-  if (!piecesEl) return;
-
-  const seen = new Set();
-
-  for (let row = 0; row < BOARD_SIZE; row += 1) {
-    for (let col = 0; col < BOARD_SIZE; col += 1) {
       const candy = board[row][col];
-      if (!candy) continue;
-      seen.add(candy.id);
-
-      const el = ensurePieceEl(candy.id, row, col);
-      el.dataset.row = String(row);
-      el.dataset.col = String(col);
-
       const specialLabel = candy?.kind === 'wrapped' ? ' (Wrapped candy)' : '';
-      el.setAttribute('aria-label', `Candy at row ${row + 1}, col ${col + 1}${specialLabel}`);
-      el.className = gemClasses(row, col);
-
-      el.style.transitionProperty = 'transform, opacity, filter';
-      el.style.transitionDuration = `${durationMs}ms`;
-      el.style.transitionTimingFunction = 'cubic-bezier(0.18, 0.85, 0.32, 1)';
-
-      const pos = positionForCell(row, col);
-      el.style.transform = `translate(${pos.x}px, ${pos.y}px)`;
+      const label = candy
+        ? `Candy at row ${row + 1}, col ${col + 1}${specialLabel}`
+        : `Empty at row ${row + 1}, col ${col + 1}`;
+      btn.className = gemClasses(row, col);
+      btn.setAttribute('aria-label', label);
     }
-  }
-
-  // Remove stale piece elements (should be rare).
-  for (const [id, el] of pieceElsById.entries()) {
-    if (seen.has(id)) continue;
-    el.classList.add('clearing');
-    window.setTimeout(() => {
-      el.remove();
-      pieceElsById.delete(id);
-    }, CLEAR_DELAY_MS);
   }
 }
 
 function captureCellRects() {
-  // For legacy animation paths (commit 2 will remove FLIP).
   ensureBoardDom();
   const rects = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(null));
   for (let row = 0; row < BOARD_SIZE; row += 1) {
@@ -424,9 +306,32 @@ function nextFrame() {
 }
 
 async function animateFlip(updateFn, durationMs) {
-  // Pieces are absolutely positioned; simply updating transforms yields the animation.
+  // FLIP animation: First → Last → Invert → Play
+  const first = captureCellRects();
   updateFn();
-  renderBoard({ durationMs });
+  const last = captureCellRects();
+
+  // Invert: move elements back to where they were.
+  for (let row = 0; row < BOARD_SIZE; row += 1) {
+    for (let col = 0; col < BOARD_SIZE; col += 1) {
+      const el = cellEls[row][col];
+      const dx = first[row][col].left - last[row][col].left;
+      const dy = first[row][col].top - last[row][col].top;
+      el.style.transitionDuration = '0ms';
+      el.style.transform = (dx || dy) ? `translate(${dx}px, ${dy}px)` : '';
+    }
+  }
+
+  // Play: on next frame, clear transform so CSS transition animates to the new position.
+  await nextFrame();
+  for (let row = 0; row < BOARD_SIZE; row += 1) {
+    for (let col = 0; col < BOARD_SIZE; col += 1) {
+      const el = cellEls[row][col];
+      el.style.transitionDuration = `${durationMs}ms`;
+      el.style.transform = '';
+    }
+  }
+
   await wait(durationMs);
 }
 
@@ -465,38 +370,63 @@ function computeSpawnOffsetPx(row, col) {
 
 async function animateDropAndSpawn(updateFn, durationMs) {
   // Like animateFlip, but also animates newly spawned candies falling from above.
+  const first = captureCellRects();
   let spawnedCells = [];
   updateFn((cells) => {
     spawnedCells = Array.isArray(cells) ? cells : [];
   });
+  const last = captureCellRects();
 
-  // Put spawned pieces above the board before we animate everyone into place.
-  for (const cell of spawnedCells) {
-    const candy = board?.[cell.row]?.[cell.col];
-    if (!candy) continue;
-    const el = ensurePieceEl(candy.id, cell.row, cell.col);
-    const offset = computeSpawnOffsetPx(cell.row, cell.col);
-    const target = positionForCell(cell.row, cell.col);
-    el.classList.add('spawning');
-    el.style.transitionDuration = '0ms';
-    el.style.transform = offset > 0 ? `translate(${target.x}px, ${target.y - offset}px) scale(0.98)` : `translate(${target.x}px, ${target.y}px) scale(0.98)`;
+  for (let row = 0; row < BOARD_SIZE; row += 1) {
+    for (let col = 0; col < BOARD_SIZE; col += 1) {
+      const el = cellEls[row][col];
+      const dx = first[row][col].left - last[row][col].left;
+      const dy = first[row][col].top - last[row][col].top;
+      el.style.transitionDuration = '0ms';
+      el.style.transform = (dx || dy) ? `translate(${dx}px, ${dy}px)` : '';
+    }
   }
 
   await nextFrame();
-  syncPiecesDom({ durationMs });
+
+  // Let the regular drop FLIP play first.
+  for (let row = 0; row < BOARD_SIZE; row += 1) {
+    for (let col = 0; col < BOARD_SIZE; col += 1) {
+      const el = cellEls[row][col];
+      el.style.transitionDuration = `${durationMs}ms`;
+      el.style.transform = '';
+    }
+  }
+
+  // Then override spawned cells to start above and fall into place.
+  for (const cell of spawnedCells) {
+    const el = cellEls?.[cell.row]?.[cell.col];
+    if (!el) continue;
+    const offset = computeSpawnOffsetPx(cell.row, cell.col);
+    el.classList.add('spawning');
+    el.style.transitionDuration = '0ms';
+    el.style.transform = offset > 0 ? `translateY(${-offset}px) scale(0.98)` : 'scale(0.98)';
+  }
+
+  await nextFrame();
+  for (const cell of spawnedCells) {
+    const el = cellEls?.[cell.row]?.[cell.col];
+    if (!el) continue;
+    el.style.transitionDuration = `${durationMs}ms`;
+    el.style.transform = '';
+  }
+
   await wait(durationMs);
 
   for (const cell of spawnedCells) {
-    const candy = board?.[cell.row]?.[cell.col];
-    if (!candy) continue;
-    const el = pieceElsById.get(candy.id);
-    if (el) el.classList.remove('spawning');
+    const el = cellEls?.[cell.row]?.[cell.col];
+    if (!el) continue;
+    el.classList.remove('spawning');
   }
 }
 
-function renderBoard({ durationMs = 0 } = {}) {
+function renderBoard() {
   updateBoardDom();
-  syncPiecesDom({ durationMs });
 }
 
 function findMatches() {
@@ -925,8 +855,7 @@ async function animateClear(matches, fxOverrides = null) {
   matches.forEach((key) => {
     const { row, col } = parseKey(key);
     if (!inBounds(row, col)) return;
-    const candy = board?.[row]?.[col];
-    const el = candy ? pieceElsById.get(candy.id) : null;
+    const el = cellEls?.[row]?.[col];
     if (el) {
       el.classList.add('clearing');
     }
@@ -1636,11 +1565,8 @@ async function trySwap(from, to) {
       renderBoard();
     }, 140);
 
-    const candyA = board?.[from.row]?.[from.col];
-    const candyB = board?.[to.row]?.[to.col];
-
-    const a = candyA ? pieceElsById.get(candyA.id) : null;
-    const b = candyB ? pieceElsById.get(candyB.id) : null;
+    const a = cellEls[from.row][from.col];
+    const b = cellEls[to.row][to.col];
 
     if (a) {
       a.classList.add('invalid');
@@ -1667,13 +1593,11 @@ async function trySwap(from, to) {
 }
 
 async function onGemClick(event) {
-  const rawTarget = event.target;
-  if (!(rawTarget instanceof HTMLElement)) {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
     return;
   }
-
-  const target = rawTarget.closest('button.gem');
-  if (!target || isLocked) {
+  if (!target.classList.contains('gem') || isLocked) {
     return;
   }
 
@@ -1710,10 +1634,6 @@ function resetGame() {
   selected = null;
   isLocked = false;
   pendingOutcome = null;
-
-  pieceElsById.clear();
-  if (piecesEl) piecesEl.innerHTML = '';
-
   generateBoardWithoutMatches();
   seedDebugSpecialCandies();
   updateHud();
@@ -1725,7 +1645,7 @@ function resetGame() {
   }
 }
 
-piecesEl?.addEventListener('click', (event) => {
+boardEl.addEventListener('click', (event) => {
   onGemClick(event).catch(() => {
     isLocked = false;
   });
