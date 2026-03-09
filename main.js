@@ -669,10 +669,10 @@ function hueForGemColor(color) {
 }
 
 function addSparklesFx(row, col, count, { hue = 60, power = 1 } = {}) {
-  if (!fxEl || !cachedBoardRect || !cachedCellRects) return 0;
+  if (!fxEl || !cachedBoardWrapRect || !cachedCellRects) return 0;
   if (!count || count <= 0) return 0;
 
-  const boardRect = cachedBoardRect;
+  const boardRect = cachedBoardWrapRect;
   const cellRect = cachedCellRects[row][col];
 
   const baseX = cellRect.left - boardRect.left + cellRect.width / 2;
@@ -722,9 +722,9 @@ function addSparklesFx(row, col, count, { hue = 60, power = 1 } = {}) {
 }
 
 function addBeamFx(kind, row, col) {
-  if (!fxEl || !cachedBoardRect || !cachedCellRects) return;
+  if (!fxEl || !cachedBoardWrapRect || !cachedCellRects) return;
 
-  const boardRect = cachedBoardRect;
+  const boardRect = cachedBoardWrapRect;
   const cellRect = cachedCellRects[row][col];
 
   const beam = document.createElement('div');
@@ -744,9 +744,9 @@ function addBeamFx(kind, row, col) {
 }
 
 function addPulseFx(row, col) {
-  if (!fxEl || !cachedBoardRect || !cachedCellRects) return;
+  if (!fxEl || !cachedBoardWrapRect || !cachedCellRects) return;
 
-  const boardRect = cachedBoardRect;
+  const boardRect = cachedBoardWrapRect;
   const cellRect = cachedCellRects[row][col];
 
   const pulse = document.createElement('div');
@@ -761,9 +761,9 @@ function addPulseFx(row, col) {
 }
 
 function addWrappedBlastFx(row, col) {
-  if (!fxEl || !cachedBoardRect || !cachedCellRects) return;
+  if (!fxEl || !cachedBoardWrapRect || !cachedCellRects) return;
 
-  const boardRect = cachedBoardRect;
+  const boardRect = cachedBoardWrapRect;
   const cellRect = cachedCellRects[row][col];
 
   const blast = document.createElement('div');
