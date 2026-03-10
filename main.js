@@ -708,11 +708,15 @@ function syncPiecesDom({ durationMs = 0 } = {}) {
       const pos = positionForCell(row, col);
       const tx = `${pos.x}px`;
       const ty = `${pos.y}px`;
-      if (el.dataset.tx !== tx) {
+      const styleTx = el.style.getPropertyValue('--tx').trim();
+      const styleTy = el.style.getPropertyValue('--ty').trim();
+      const datasetTxMatches = el.dataset.tx === tx;
+      const datasetTyMatches = el.dataset.ty === ty;
+      if (styleTx !== tx || !datasetTxMatches) {
         el.style.setProperty('--tx', tx);
         el.dataset.tx = tx;
       }
-      if (el.dataset.ty !== ty) {
+      if (styleTy !== ty || !datasetTyMatches) {
         el.style.setProperty('--ty', ty);
         el.dataset.ty = ty;
       }
@@ -2513,5 +2517,52 @@ window.match3State = {
       holes,
       gemNodeCount: pieceElsById.size,
     };
+  },
+  misplaced(limit = 10) {
+    ensureBoardDom();
+    maybeRefreshBoardGeometry();
+
+    const wrapRect = cachedBoardWrapRect || boardWrapEl?.getBoundingClientRect() || boardEl?.getBoundingClientRect();
+    const results = [];
+
+    for (const [id, el] of pieceElsById.entries()) {
+      const row = Number.parseInt(el.dataset.row, 10);
+      const col = Number.parseInt(el.dataset.col, 10);
+      if (!Number.isInteger(row) || !Number.isInteger(col) || !inBounds(row, col)) continue;
+
+      const expectedRect = cachedCellRects?.[row]?.[col];
+      const actualRect = el.getBoundingClientRect();
+      const expectedLeft = expectedRect ? expectedRect.left : (wrapRect ? wrapRect.left + positionForCell(row, col).x : actualRect.left);
+      const expectedTop = expectedRect ? expectedRect.top : (wrapRect ? wrapRect.top + positionForCell(row, col).y : actualRect.top);
+      const dx = actualRect.left - expectedLeft;
+      const dy = actualRect.top - expectedTop;
+      const distance = Math.hypot(dx, dy);
+      if (distance <= 0.5) continue;
+
+      results.push({
+        id,
+        row,
+        col,
+        dx,
+        dy,
+        distance,
+        actual: {
+          left: actualRect.left,
+          top: actualRect.top,
+          width: actualRect.width,
+          height: actualRect.height,
+        },
+        expected: {
+          left: expectedLeft,
+          top: expectedTop,
+          width: expectedRect?.width ?? actualRect.width,
+          height: expectedRect?.height ?? actualRect.height,
+        },
+      });
+    }
+
+    results.sort((a, b) => b.distance - a.distance);
+    const max = Math.max(0, Number.parseInt(limit, 10) || 0);
+    return results.slice(0, max);
   },
 };
