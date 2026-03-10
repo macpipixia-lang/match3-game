@@ -67,6 +67,9 @@ let debugEnabled = false;
 let perfEnabled = false;
 let comboToastTimer = 0;
 let comboToastRaf = 0;
+let goalsRenderRaf = 0;
+let pendingGoalsRenderLevel = null;
+let lastGoalsMarkup = '';
 let currentLevelIndex = 0;
 let bestScore = 0;
 let pendingOutcome = null;
@@ -340,9 +343,7 @@ function renderGoalChip({ label, value, meta = '', done = false, modifier = '', 
   `;
 }
 
-function renderGoals(level) {
-  if (!goalsEl) return;
-
+function buildGoalsMarkup(level) {
   const goals = level.goals || { score: level.targetScore };
   const chips = [];
 
@@ -393,7 +394,27 @@ function renderGoals(level) {
     }));
   }
 
-  goalsEl.innerHTML = chips.join('');
+  return chips.join('');
+}
+
+function renderGoals(level) {
+  if (!goalsEl) return;
+  const markup = buildGoalsMarkup(level);
+  if (markup === lastGoalsMarkup) return;
+  goalsEl.innerHTML = markup;
+  lastGoalsMarkup = markup;
+}
+
+function scheduleGoalsRender(level) {
+  if (!goalsEl) return;
+  pendingGoalsRenderLevel = level;
+  if (goalsRenderRaf) return;
+  goalsRenderRaf = window.requestAnimationFrame(() => {
+    goalsRenderRaf = 0;
+    const levelToRender = pendingGoalsRenderLevel || LEVELS[currentLevelIndex];
+    pendingGoalsRenderLevel = null;
+    renderGoals(levelToRender);
+  });
 }
 
 function updateHud() {
@@ -401,7 +422,7 @@ function updateHud() {
   movesEl.textContent = String(moves);
   const level = LEVELS[currentLevelIndex];
   if (targetScoreEl) targetScoreEl.textContent = formatGoalsForHud(level);
-  renderGoals(level);
+  scheduleGoalsRender(level);
   if (moveLimitEl) moveLimitEl.textContent = String(level.moveLimit);
   if (levelEl) levelEl.textContent = String(currentLevelIndex + 1);
   if (bestScoreEl) bestScoreEl.textContent = String(bestScore);
@@ -410,19 +431,12 @@ function updateHud() {
 function gemClasses(row, col) {
   const classes = ['gem'];
   const candy = board[row][col];
-  const blocker = blockerAt(row, col);
 
   if (!candy) {
     return classes.join(' ');
   }
 
   classes.push(`gem--${candy.color}`);
-
-  if (blocker?.kind === 'ice') {
-    classes.push('gem--ice');
-  } else if (blocker?.kind === 'lock') {
-    classes.push('gem--lock');
-  }
 
   if (candy.kind === 'striped') {
     classes.push('gem--striped');
@@ -571,8 +585,12 @@ function createPieceEl(candyId, row, col) {
   // Set initial position variables synchronously before attaching to the DOM.
   // Positioning is driven by CSS `transform: translate(var(--tx), var(--ty))` so animations don't override translation.
   const pos = positionForCell(row, col);
-  el.style.setProperty('--tx', `${pos.x}px`);
-  el.style.setProperty('--ty', `${pos.y}px`);
+  const tx = `${pos.x}px`;
+  const ty = `${pos.y}px`;
+  el.style.setProperty('--tx', tx);
+  el.style.setProperty('--ty', ty);
+  el.dataset.tx = tx;
+  el.dataset.ty = ty;
   el.setAttribute('aria-label', `Candy at row ${row + 1}, col ${col + 1}`);
   return el;
 }
@@ -599,7 +617,11 @@ function syncPiecesDom({ durationMs = 0 } = {}) {
   const perfStart = perfNow();
   ensureBoardDom();
   if (!piecesEl) return;
-  piecesEl.style.setProperty('--move-duration', `${durationMs}ms`);
+  const moveDuration = `${durationMs}ms`;
+  if (piecesEl.dataset.moveDuration !== moveDuration) {
+    piecesEl.style.setProperty('--move-duration', moveDuration);
+    piecesEl.dataset.moveDuration = moveDuration;
+  }
 
   const seen = new Set();
   const newPiecesFrag = document.createDocumentFragment();
@@ -628,10 +650,27 @@ function syncPiecesDom({ durationMs = 0 } = {}) {
       if (el.className !== className) {
         el.className = className;
       }
+      const overlayKind = blockerAt(row, col)?.kind;
+      const overlay = overlayKind === 'ice' || overlayKind === 'lock' ? overlayKind : '';
+      if ((el.dataset.overlay || '') !== overlay) {
+        if (overlay) {
+          el.dataset.overlay = overlay;
+        } else {
+          delete el.dataset.overlay;
+        }
+      }
 
       const pos = positionForCell(row, col);
-      el.style.setProperty('--tx', `${pos.x}px`);
-      el.style.setProperty('--ty', `${pos.y}px`);
+      const tx = `${pos.x}px`;
+      const ty = `${pos.y}px`;
+      if (el.dataset.tx !== tx) {
+        el.style.setProperty('--tx', tx);
+        el.dataset.tx = tx;
+      }
+      if (el.dataset.ty !== ty) {
+        el.style.setProperty('--ty', ty);
+        el.dataset.ty = ty;
+      }
       if (el.style.visibility !== 'visible') el.style.visibility = 'visible';
       if (el.style.transitionDuration) el.style.transitionDuration = '';
     }
@@ -935,10 +974,14 @@ function playSfx(name) {
   }
 }
 
-const FX_POOL_MAX = 280;
+const FX_POOL_MAX = 160;
 const PULSE_MAX_PER_CLEAR = 16;
 const WRAPPED_BLAST_MAX_PER_CLEAR = 8;
 const FX_SAMPLE_THRESHOLD = 20;
+const DENSE_CLEAR_THRESHOLD = 20;
+const DENSE_BEAM_LIMIT = 5;
+const DENSE_PULSE_LIMIT = 6;
+const DENSE_WRAPPED_LIMIT = 4;
 
 const fxPools = {
   sparkle: [],
@@ -963,8 +1006,13 @@ function ensureFxCleanupListener() {
 
 function acquireFxNode(poolType, className) {
   const pool = fxPools[poolType];
-  const el = pool.length > 0 ? pool.pop() : document.createElement('div');
-  el.className = className;
+  let el = pool.length > 0 ? pool.pop() : null;
+  if (!el) {
+    el = document.createElement('div');
+    el.classList.add('fx-node');
+    if (fxEl) fxEl.appendChild(el);
+  }
+  el.className = `fx-node ${className} fx-active`;
   el.dataset.fxPoolType = poolType;
   activeFxNodes.add(el);
   return el;
@@ -973,11 +1021,15 @@ function acquireFxNode(poolType, className) {
 function releaseFxNode(el) {
   if (!activeFxNodes.has(el)) return;
   activeFxNodes.delete(el);
-  el.remove();
+  el.classList.remove('fx-active');
 
   const poolType = el.dataset.fxPoolType;
   const pool = poolType ? fxPools[poolType] : null;
-  if (!pool || pool.length >= FX_POOL_MAX) return;
+  if (!pool) return;
+  if (pool.length >= FX_POOL_MAX) {
+    el.remove();
+    return;
+  }
 
   el.removeAttribute('style');
   pool.push(el);
@@ -1033,7 +1085,6 @@ function addSparklesFx(row, col, count, { hue = 60, power = 1 } = {}) {
   const maxOffset = Math.max(6, cellRect.width * 0.18);
   const maxTravel = Math.max(18, cellRect.width * 0.55) * power;
 
-  const frag = document.createDocumentFragment();
   for (let i = 0; i < count; i += 1) {
     const s = acquireFxNode('sparkle', 'sparkle');
 
@@ -1057,9 +1108,7 @@ function addSparklesFx(row, col, count, { hue = 60, power = 1 } = {}) {
     s.style.setProperty('--dur', `${dur.toFixed(0)}ms`);
     s.style.setProperty('--h', String(hue));
 
-    frag.appendChild(s);
   }
-  fxEl.appendChild(frag);
   return count;
 }
 
@@ -1082,8 +1131,6 @@ function addBeamFx(kind, row, col) {
     beam.style.bottom = '10px';
     beam.style.left = `${cellRect.left - boardRect.left + cellRect.width * 0.15}px`;
   }
-
-  fxEl.appendChild(beam);
 }
 
 function addPulseFx(row, col) {
@@ -1098,8 +1145,6 @@ function addPulseFx(row, col) {
   pulse.style.setProperty('--size', `${size.toFixed(2)}px`);
   pulse.style.setProperty('--x', `${(cellRect.left - boardRect.left + cellRect.width / 2 - size / 2).toFixed(2)}px`);
   pulse.style.setProperty('--y', `${(cellRect.top - boardRect.top + cellRect.height / 2 - size / 2).toFixed(2)}px`);
-
-  fxEl.appendChild(pulse);
 }
 
 function addWrappedBlastFx(row, col) {
@@ -1114,8 +1159,6 @@ function addWrappedBlastFx(row, col) {
   blast.style.setProperty('--size', `${size.toFixed(2)}px`);
   blast.style.setProperty('--x', `${(cellRect.left - boardRect.left + cellRect.width / 2 - size / 2).toFixed(2)}px`);
   blast.style.setProperty('--y', `${(cellRect.top - boardRect.top + cellRect.height / 2 - size / 2).toFixed(2)}px`);
-
-  fxEl.appendChild(blast);
 }
 
 function sampleCells(cells, maxCount) {
@@ -1160,21 +1203,33 @@ function spawnFxForClearSet(matches, fxOverrides = null) {
     pulses = sampleCells(pulses, PULSE_MAX_PER_CLEAR);
     wrappedBlasts = sampleCells(wrappedBlasts, WRAPPED_BLAST_MAX_PER_CLEAR);
   }
+  const rowBeamList = [...rowBeams];
+  const colBeamList = [...colBeams];
+  if (clearCount > DENSE_CLEAR_THRESHOLD) {
+    pulses = sampleCells(pulses, DENSE_PULSE_LIMIT);
+    wrappedBlasts = sampleCells(wrappedBlasts, DENSE_WRAPPED_LIMIT);
+  }
+  const sampledRows = clearCount > DENSE_CLEAR_THRESHOLD ? sampleCells(rowBeamList, DENSE_BEAM_LIMIT) : rowBeamList;
+  const sampledCols = clearCount > DENSE_CLEAR_THRESHOLD ? sampleCells(colBeamList, DENSE_BEAM_LIMIT) : colBeamList;
 
-  rowBeams.forEach((row) => addBeamFx('row', row, 0));
-  colBeams.forEach((col) => addBeamFx('col', 0, col));
+  sampledRows.forEach((row) => addBeamFx('row', row, 0));
+  sampledCols.forEach((col) => addBeamFx('col', 0, col));
   pulses.forEach((p) => addPulseFx(p.row, p.col));
   wrappedBlasts.forEach((p) => addWrappedBlastFx(p.row, p.col));
 
   // Lightweight sparkle particles for cleared cells.
   // Performance rule: keep each wave under a hard DOM budget.
   // For huge clears, sample cells so we stay smooth.
-  let budget = Math.min(SPARKLE_MAX_PER_WAVE, SPARKLE_MAX_PER_CLEAR);
+  let budget = Math.min(
+    SPARKLE_MAX_PER_WAVE,
+    clearCount > DENSE_CLEAR_THRESHOLD ? 24 : SPARKLE_MAX_PER_CLEAR,
+  );
 
   // Decide how many cells get sparkles for this clear.
   const matchKeys = [...matches];
   const shouldSample = clearCount >= SPARKLE_SKIP_THRESHOLD;
   let basePerCell = shouldSample ? 2 : 3;
+  if (clearCount > DENSE_CLEAR_THRESHOLD) basePerCell = 1;
   if (!shouldSample) {
     if (clearCount >= 8) basePerCell = 4;
     if (clearCount >= 12) basePerCell = 5;
@@ -1200,12 +1255,12 @@ function spawnFxForClearSet(matches, fxOverrides = null) {
     const isSpecial = candy.kind !== 'normal';
 
     let wanted = basePerCell;
-    if (isSpecial) wanted += 3;
-    if (clearCount >= BIG_CLEAR_SHAKE_THRESHOLD) wanted += 1;
+    if (isSpecial) wanted += clearCount > DENSE_CLEAR_THRESHOLD ? 1 : 3;
+    if (clearCount >= BIG_CLEAR_SHAKE_THRESHOLD && clearCount <= DENSE_CLEAR_THRESHOLD) wanted += 1;
 
     wanted = Math.min(wanted, 10);
     const actual = Math.min(wanted, budget);
-    const power = isSpecial ? 1.55 : clearCount >= 10 ? 1.25 : 1;
+    const power = clearCount > DENSE_CLEAR_THRESHOLD ? 0.95 : isSpecial ? 1.55 : clearCount >= 10 ? 1.25 : 1;
 
     budget -= addSparklesFx(row, col, actual, { hue, power });
   });
@@ -2171,6 +2226,12 @@ function resetGame() {
   selected = null;
   isLocked = false;
   pendingOutcome = null;
+  lastGoalsMarkup = '';
+  if (goalsRenderRaf) {
+    window.cancelAnimationFrame(goalsRenderRaf);
+    goalsRenderRaf = 0;
+  }
+  pendingGoalsRenderLevel = null;
 
   const level = LEVELS[currentLevelIndex];
   initLevelGoals(level);

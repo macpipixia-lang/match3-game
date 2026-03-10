@@ -59,6 +59,7 @@ h1 {
   gap: 10px;
   margin-bottom: 14px;
   box-shadow: var(--shadow-soft);
+  contain: layout paint;
 }
 
 .hud__stats {
@@ -107,6 +108,7 @@ h1 {
   flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-start;
+  contain: paint;
 }
 
 .goal-chip {
@@ -256,6 +258,7 @@ h1 {
   position: relative;
   width: max-content;
   margin-inline: auto;
+  contain: layout paint;
 }
 
 .board {
@@ -308,6 +311,8 @@ h1 {
   pointer-events: auto;
   border-radius: var(--radius-md);
   --move-duration: 0ms;
+  contain: layout paint;
+  will-change: transform;
 }
 
 .pieces .gem {
@@ -325,6 +330,17 @@ h1 {
   pointer-events: none;
   overflow: hidden;
   border-radius: var(--radius-md);
+  contain: layout paint;
+  will-change: transform, opacity;
+}
+
+.fx .fx-node {
+  pointer-events: none;
+  contain: paint;
+}
+
+.fx .fx-node:not(.fx-active) {
+  display: none;
 }
 
 .board.board-shake {
@@ -619,6 +635,8 @@ h1 {
   pointer-events: none;
   text-shadow: 0 2px 6px rgb(0 0 0 / 42%);
   box-shadow: var(--shadow-soft);
+  contain: paint;
+  will-change: transform, opacity;
 }
 
 .combo-toast.show {
@@ -776,7 +794,7 @@ h1 {
   background-size: 240% 100%;
   background-position: 0% 50%;
   filter: drop-shadow(0 0 12px rgb(255 255 255 / 0.35)) drop-shadow(0 0 20px rgb(251 191 36 / 0.35));
-  animation: beam-sweep-row 480ms ease-out forwards;
+  will-change: transform, opacity, background-position;
 }
 
 .fx .beam.row {
@@ -788,6 +806,13 @@ h1 {
   background: linear-gradient(180deg, transparent, rgb(255 255 255 / 0.95), transparent);
   background-size: 100% 240%;
   background-position: 50% 0%;
+}
+
+.fx .beam.row.fx-active {
+  animation: beam-sweep-row 480ms ease-out forwards;
+}
+
+.fx .beam.col.fx-active {
   animation: beam-sweep-col 480ms ease-out forwards;
 }
 
@@ -835,8 +860,12 @@ h1 {
     conic-gradient(#f43f5e, #f59e0b, #eab308, #22c55e, #06b6d4, #3b82f6, #a855f7, #f43f5e);
   mix-blend-mode: screen;
   filter: blur(0.2px) drop-shadow(0 0 18px rgb(255 255 255 / 0.35));
-  animation: pulse-burst 520ms ease-out forwards;
   opacity: 0;
+  will-change: transform, opacity;
+}
+
+.fx .pulse.fx-active {
+  animation: pulse-burst 520ms ease-out forwards;
 }
 
 @keyframes pulse-burst {
@@ -867,6 +896,10 @@ h1 {
     radial-gradient(circle, rgb(244 63 94 / 0.35), rgb(244 63 94 / 0) 68%);
   mix-blend-mode: screen;
   filter: drop-shadow(0 0 18px rgb(255 255 255 / 0.25));
+  will-change: transform, opacity;
+}
+
+.fx .wrapped-blast.fx-active {
   animation: wrapped-blast 520ms ease-out forwards;
 }
 
@@ -901,6 +934,9 @@ h1 {
     drop-shadow(0 0 12px rgb(255 255 255 / 0.22));
   transform: translate3d(0, 0, 0);
   will-change: transform, opacity;
+}
+
+.fx .sparkle.fx-active {
   animation: sparkle-fly var(--dur, 240ms) ease-out forwards;
 }
 
