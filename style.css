@@ -67,6 +67,7 @@ h1 {
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
   align-items: stretch;
+  contain: paint;
 }
 
 .stat {
@@ -197,6 +198,7 @@ h1 {
   justify-content: center;
   gap: 10px;
   flex-wrap: wrap;
+  contain: paint;
 }
 
 /* Buttons */
@@ -492,18 +494,18 @@ h1 {
   box-shadow: inset 0 0 0 2px rgb(255 255 255 / 0.22);
 }
 
-.gem.gem--ice,
-.gem.gem--lock {
+.gem[data-overlay='ice'],
+.gem[data-overlay='lock'] {
   --gem-overlay-opacity: 1;
 }
 
-.gem.gem--ice::after,
-.gem.gem--lock::after {
+.gem[data-overlay='ice']::after,
+.gem[data-overlay='lock']::after {
   inset: 0;
   border-radius: inherit;
 }
 
-.gem.gem--ice {
+.gem[data-overlay='ice'] {
   --gem-overlay-bg:
     linear-gradient(135deg, rgb(255 255 255 / 0.44), rgb(255 255 255 / 0.08) 34%, rgb(255 255 255 / 0.28) 62%, rgb(147 197 253 / 0.12)),
     linear-gradient(115deg, rgb(255 255 255 / 0) 18%, rgb(255 255 255 / 0.34) 19% 22%, rgb(255 255 255 / 0) 23% 100%),
@@ -516,7 +518,7 @@ h1 {
     inset 0 0 0 4px rgb(125 211 252 / 0.18);
 }
 
-.gem.gem--lock {
+.gem[data-overlay='lock'] {
   --gem-overlay-bg:
     radial-gradient(circle at 50% 50%, rgb(15 23 42 / 0) 56%, rgb(15 23 42 / 0.42) 72%, rgb(248 250 252 / 0.88) 73% 76%, rgb(15 23 42 / 0.26) 77%),
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cg fill='none' stroke='%23f8fafc' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M19 29v-7c0-7.2 5.8-13 13-13s13 5.8 13 13v7'/%3E%3Crect x='14' y='29' width='36' height='25' rx='7' fill='%230f172a' fill-opacity='.72'/%3E%3Cpath d='M32 38v8'/%3E%3Ccircle cx='32' cy='37' r='3' fill='%23f8fafc' stroke='none'/%3E%3C/g%3E%3C/svg%3E"),
@@ -527,18 +529,18 @@ h1 {
   --gem-overlay-filter: drop-shadow(0 2px 3px rgb(15 23 42 / 0.35));
 }
 
-.gem.gem--lock::after {
+.gem[data-overlay='lock']::after {
   background-repeat: no-repeat, no-repeat, no-repeat;
   background-size: cover, 20px 20px, 100% 100%;
   background-position: center, right 5px top 5px, center;
 }
 
-.gem.gem--ice.gem--striped-row,
-.gem.gem--ice.gem--striped-col,
-.gem.gem--lock.gem--striped-row,
-.gem.gem--lock.gem--striped-col,
-.gem.gem--ice.gem--wrapped,
-.gem.gem--lock.gem--wrapped {
+.gem[data-overlay='ice'].gem--striped-row,
+.gem[data-overlay='ice'].gem--striped-col,
+.gem[data-overlay='lock'].gem--striped-row,
+.gem[data-overlay='lock'].gem--striped-col,
+.gem[data-overlay='ice'].gem--wrapped,
+.gem[data-overlay='lock'].gem--wrapped {
   --gem-overlay-z: 3;
 }
 

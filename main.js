@@ -1224,13 +1224,14 @@ function spawnFxForClearSet(matches, fxOverrides = null) {
     SPARKLE_MAX_PER_WAVE,
     clearCount > DENSE_CLEAR_THRESHOLD ? 24 : SPARKLE_MAX_PER_CLEAR,
   );
+  const startBudget = budget;
 
   // Decide how many cells get sparkles for this clear.
   const matchKeys = [...matches];
   const shouldSample = clearCount >= SPARKLE_SKIP_THRESHOLD;
   let basePerCell = shouldSample ? 2 : 3;
   if (clearCount > DENSE_CLEAR_THRESHOLD) basePerCell = 1;
-  if (!shouldSample) {
+  if (!shouldSample && clearCount <= DENSE_CLEAR_THRESHOLD) {
     if (clearCount >= 8) basePerCell = 4;
     if (clearCount >= 12) basePerCell = 5;
   }
@@ -1264,7 +1265,7 @@ function spawnFxForClearSet(matches, fxOverrides = null) {
 
     budget -= addSparklesFx(row, col, actual, { hue, power });
   });
-  perfLog('spawnFxForClearSet', perfStart, `clear=${clearCount} sparkBudget=${Math.min(SPARKLE_MAX_PER_WAVE, SPARKLE_MAX_PER_CLEAR) - budget}`);
+  perfLog('spawnFxForClearSet', perfStart, `clear=${clearCount} sparkBudget=${startBudget - budget}`);
 }
 
 async function animateClear(matches, fxOverrides = null) {
