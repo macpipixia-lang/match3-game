@@ -549,6 +549,23 @@ function cacheBoardGeometry() {
   if (p00 && p10) cachedStepY = p10.y - p00.y;
 }
 
+function maybeRefreshBoardGeometry() {
+  ensureBoardDom();
+  if (!cellEls) return;
+  const wrap = boardEl.closest('.board-wrap') || boardEl;
+  const currentWrapRect = wrap.getBoundingClientRect();
+
+  if (
+    !cachedBoardWrapRect
+    || Math.abs(currentWrapRect.left - cachedBoardWrapRect.left) > 0.5
+    || Math.abs(currentWrapRect.top - cachedBoardWrapRect.top) > 0.5
+    || Math.abs(currentWrapRect.width - cachedBoardWrapRect.width) > 0.5
+    || Math.abs(currentWrapRect.height - cachedBoardWrapRect.height) > 0.5
+  ) {
+    cacheBoardGeometry();
+  }
+}
+
 window.addEventListener('resize', () => {
   cacheFallbackGridMetrics();
   if (cellEls) cacheBoardGeometry();
@@ -746,6 +763,7 @@ async function animateFlip(updateFn, durationMs) {
 
 
 function renderBoard({ durationMs = 0 } = {}) {
+  maybeRefreshBoardGeometry();
   updateBoardDom();
   syncPiecesDom({ durationMs });
 }
@@ -2463,6 +2481,15 @@ window.match3State = {
   get debugEnabled() {
     return debugEnabled;
   },
+  get board() {
+    return board;
+  },
+  get blockers() {
+    return blockers;
+  },
+  get isLocked() {
+    return isLocked;
+  },
   get perfEnabled() {
     return perfEnabled;
   },
@@ -2474,5 +2501,17 @@ window.match3State = {
   },
   get moves() {
     return moves;
+  },
+  dump() {
+    let holes = 0;
+    for (let row = 0; row < BOARD_SIZE; row += 1) {
+      for (let col = 0; col < BOARD_SIZE; col += 1) {
+        if (!board[row][col] && !isStoneCell(row, col)) holes += 1;
+      }
+    }
+    return {
+      holes,
+      gemNodeCount: pieceElsById.size,
+    };
   },
 };
