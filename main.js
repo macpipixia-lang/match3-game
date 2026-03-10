@@ -55,6 +55,7 @@ const levelOverlayEl = document.getElementById('levelOverlay');
 const overlayTitleEl = document.getElementById('overlayTitle');
 const overlayBodyEl = document.getElementById('overlayBody');
 const overlayActionBtn = document.getElementById('overlayActionBtn');
+const boardWrapEl = boardEl ? boardEl.closest('.board-wrap') : null;
 
 let board = [];
 let blockers = []; // { kind: 'ice'|'lock'|'stone', hp?: number } | null
@@ -73,6 +74,7 @@ let lastGoalsMarkup = '';
 let currentLevelIndex = 0;
 let bestScore = 0;
 let pendingOutcome = null;
+let boardAnimationDepth = 0;
 
 // DOM cache for performance: create 8x8 invisible cell buttons once.
 let cellEls = null; // HTMLElement[BOARD_SIZE][BOARD_SIZE]
@@ -100,6 +102,32 @@ function perfLog(label, startMs, extra = '') {
   const elapsed = performance.now() - startMs;
   const suffix = extra ? ` ${extra}` : '';
   console.log(`[perf] ${label} ${elapsed.toFixed(1)}ms${suffix}`);
+}
+
+function syncInteractionState() {
+  const boardAnimating = isLocked || boardAnimationDepth > 0;
+  boardWrapEl?.classList.toggle('board-wrap--animating', boardAnimating);
+  document.body.classList.toggle('animating', boardAnimationDepth > 0);
+  if (boardEl) {
+    boardEl.setAttribute('aria-busy', boardAnimating ? 'true' : 'false');
+  }
+}
+
+function setLocked(value) {
+  isLocked = value;
+  syncInteractionState();
+}
+
+function beginBoardAnimation() {
+  boardAnimationDepth += 1;
+  syncInteractionState();
+}
+
+function endBoardAnimation() {
+  if (boardAnimationDepth > 0) {
+    boardAnimationDepth -= 1;
+  }
+  syncInteractionState();
 }
 
 function randGem() {
@@ -928,7 +956,7 @@ function concludeLevelIfNeeded() {
     return false;
   }
 
-  isLocked = true;
+  setLocked(true);
   applyScoreProgress();
   showLevelOverlay(pendingOutcome === 'win');
   return true;
@@ -982,6 +1010,8 @@ const DENSE_CLEAR_THRESHOLD = 20;
 const DENSE_BEAM_LIMIT = 5;
 const DENSE_PULSE_LIMIT = 6;
 const DENSE_WRAPPED_LIMIT = 4;
+const DENSE_SPARKLE_MAX_PER_CLEAR = 16;
+const SPARKLE_SPLIT_FRAME_THRESHOLD = 20;
 
 const fxPools = {
   sparkle: [],
@@ -992,6 +1022,8 @@ const fxPools = {
 };
 const activeFxNodes = new Set();
 let fxCleanupListenerBound = false;
+let pendingSparkleRaf = 0;
+let pendingSparkleBatchToken = 0;
 
 function ensureFxCleanupListener() {
   if (!fxEl || fxCleanupListenerBound) return;
@@ -1035,8 +1067,16 @@ function releaseFxNode(el) {
   pool.push(el);
 }
 
+function cancelPendingSparkles() {
+  pendingSparkleBatchToken += 1;
+  if (!pendingSparkleRaf) return;
+  window.cancelAnimationFrame(pendingSparkleRaf);
+  pendingSparkleRaf = 0;
+}
+
 function clearFxLayer() {
   if (!fxEl) return;
+  cancelPendingSparkles();
   ensureFxCleanupListener();
   if (activeFxNodes.size === 0) return;
   const nodes = Array.from(activeFxNodes);
@@ -1049,6 +1089,67 @@ const SPARKLE_MAX_PER_WAVE = 120;
 // Keep particles (visual feedback) but prevent large clears from creating hundreds of nodes at once.
 const SPARKLE_MAX_PER_CLEAR = 80;
 const SPARKLE_SKIP_THRESHOLD = 24;
+
+function createFxRandom(seed) {
+  let state = seed >>> 0;
+  if (state === 0) state = 0x6d2b79f5;
+  return () => {
+    state = (state + 0x6d2b79f5) | 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function runSparkleJobs(jobs, startIndex, endIndex) {
+  if (!fxEl || !cachedBoardWrapRect || !cachedCellRects) return 0;
+  ensureFxCleanupListener();
+
+  const boardRect = cachedBoardWrapRect;
+  let created = 0;
+
+  for (let jobIndex = startIndex; jobIndex < endIndex; jobIndex += 1) {
+    const job = jobs[jobIndex];
+    const cellRect = cachedCellRects[job.row][job.col];
+    if (!cellRect) continue;
+
+    const baseX = cellRect.left - boardRect.left + cellRect.width / 2;
+    const baseY = cellRect.top - boardRect.top + cellRect.height / 2;
+    const maxOffset = Math.max(6, cellRect.width * 0.18);
+    const maxTravel = Math.max(18, cellRect.width * 0.55) * job.power;
+    const sizeScale = 0.95 + job.power * 0.25;
+    const durationScale = 1 / (0.9 + job.power * 0.1);
+    const rand = createFxRandom(job.seed);
+
+    for (let i = 0; i < job.count; i += 1) {
+      const sparkle = acquireFxNode('sparkle', 'sparkle');
+      const startX = Math.round((baseX + (rand() * 2 - 1) * maxOffset) * 10) / 10;
+      const startY = Math.round((baseY + (rand() * 2 - 1) * maxOffset) * 10) / 10;
+      const angle = rand() * Math.PI * 2;
+      const distance = (0.35 + rand() * 0.75) * maxTravel;
+      const dx = Math.round(Math.cos(angle) * distance * 10) / 10;
+      const dy = Math.round(Math.sin(angle) * distance * 10) / 10;
+      const size = Math.round((2.2 + rand() * 2.4) * sizeScale * 10) / 10;
+      const duration = Math.round((170 + rand() * 90) * durationScale);
+
+      sparkle.style.cssText = `--x:${startX}px;--y:${startY}px;--dx:${dx}px;--dy:${dy}px;--s:${size}px;--dur:${duration}ms;--h:${job.hue};`;
+      created += 1;
+    }
+  }
+
+  return created;
+}
+
+function scheduleSparkleJobs(jobs, startIndex, endIndex) {
+  if (startIndex >= endIndex) return;
+  cancelPendingSparkles();
+  const batchToken = pendingSparkleBatchToken;
+  pendingSparkleRaf = window.requestAnimationFrame(() => {
+    pendingSparkleRaf = 0;
+    if (batchToken !== pendingSparkleBatchToken) return;
+    runSparkleJobs(jobs, startIndex, endIndex);
+  });
+}
 
 function hueForGemColor(color) {
   // Map our 0..5 palette to a visually distinct hue range.
@@ -1069,47 +1170,6 @@ function hueForGemColor(color) {
     default:
       return 60;
   }
-}
-
-function addSparklesFx(row, col, count, { hue = 60, power = 1 } = {}) {
-  if (!fxEl || !cachedBoardWrapRect || !cachedCellRects) return 0;
-  if (!count || count <= 0) return 0;
-  ensureFxCleanupListener();
-
-  const boardRect = cachedBoardWrapRect;
-  const cellRect = cachedCellRects[row][col];
-
-  const baseX = cellRect.left - boardRect.left + cellRect.width / 2;
-  const baseY = cellRect.top - boardRect.top + cellRect.height / 2;
-
-  const maxOffset = Math.max(6, cellRect.width * 0.18);
-  const maxTravel = Math.max(18, cellRect.width * 0.55) * power;
-
-  for (let i = 0; i < count; i += 1) {
-    const s = acquireFxNode('sparkle', 'sparkle');
-
-    const startX = baseX + (Math.random() * 2 - 1) * maxOffset;
-    const startY = baseY + (Math.random() * 2 - 1) * maxOffset;
-
-    const ang = Math.random() * Math.PI * 2;
-    const dist = (0.35 + Math.random() * 0.75) * maxTravel;
-    const dx = Math.cos(ang) * dist;
-    const dy = Math.sin(ang) * dist;
-
-    const size = (2.2 + Math.random() * 2.4) * (0.95 + power * 0.25);
-    // Keep duration within CLEAR_DELAY_MS so the layer reset doesn't cut the tail.
-    const dur = (170 + Math.random() * 90) * (1 / (0.9 + power * 0.1));
-
-    s.style.setProperty('--x', `${startX.toFixed(2)}px`);
-    s.style.setProperty('--y', `${startY.toFixed(2)}px`);
-    s.style.setProperty('--dx', `${dx.toFixed(2)}px`);
-    s.style.setProperty('--dy', `${dy.toFixed(2)}px`);
-    s.style.setProperty('--s', `${size.toFixed(2)}px`);
-    s.style.setProperty('--dur', `${dur.toFixed(0)}ms`);
-    s.style.setProperty('--h', String(hue));
-
-  }
-  return count;
 }
 
 function addBeamFx(kind, row, col) {
@@ -1222,9 +1282,10 @@ function spawnFxForClearSet(matches, fxOverrides = null) {
   // For huge clears, sample cells so we stay smooth.
   let budget = Math.min(
     SPARKLE_MAX_PER_WAVE,
-    clearCount > DENSE_CLEAR_THRESHOLD ? 24 : SPARKLE_MAX_PER_CLEAR,
+    clearCount > DENSE_CLEAR_THRESHOLD ? DENSE_SPARKLE_MAX_PER_CLEAR : SPARKLE_MAX_PER_CLEAR,
   );
   const startBudget = budget;
+  const sparkleJobs = [];
 
   // Decide how many cells get sparkles for this clear.
   const matchKeys = [...matches];
@@ -1263,8 +1324,19 @@ function spawnFxForClearSet(matches, fxOverrides = null) {
     const actual = Math.min(wanted, budget);
     const power = clearCount > DENSE_CLEAR_THRESHOLD ? 0.95 : isSpecial ? 1.55 : clearCount >= 10 ? 1.25 : 1;
 
-    budget -= addSparklesFx(row, col, actual, { hue, power });
+    sparkleJobs.push({
+      row,
+      col,
+      count: actual,
+      hue,
+      power,
+      seed: ((row + 1) * 73856093) ^ ((col + 1) * 19349663) ^ (actual * 83492791) ^ ((hue + 1) * 2654435761) ^ Math.round(power * 1000),
+    });
+    budget -= actual;
   });
+  const splitIndex = clearCount >= SPARKLE_SPLIT_FRAME_THRESHOLD ? Math.ceil(sparkleJobs.length / 2) : sparkleJobs.length;
+  runSparkleJobs(sparkleJobs, 0, splitIndex);
+  scheduleSparkleJobs(sparkleJobs, splitIndex, sparkleJobs.length);
   perfLog('spawnFxForClearSet', perfStart, `clear=${clearCount} sparkBudget=${startBudget - budget}`);
 }
 
@@ -2063,65 +2135,70 @@ async function trySwap(from, to) {
   if (isStoneCell(from.row, from.col) || isStoneCell(to.row, to.col) || isLockedCell(from.row, from.col) || isLockedCell(to.row, to.col)) {
     playSfx('invalid');
     selected = null;
-    isLocked = false;
+    setLocked(false);
     return;
   }
 
-  isLocked = true;
-  await animateFlip(() => {
-    swapCells(from, to);
-  }, 140);
+  beginBoardAnimation();
+  setLocked(true);
+  try {
+    await animateFlip(() => {
+      swapCells(from, to);
+    }, 140);
 
-  const comboContext = buildComboClearContext(from, to);
-  if (comboContext) {
+    const comboContext = buildComboClearContext(from, to);
+    if (comboContext) {
+      moves += 1;
+      updateHud();
+      playSfx('swap');
+      await resolveCascades(to, comboContext);
+      selected = null;
+      if (concludeLevelIfNeeded()) {
+        return;
+      }
+      setLocked(false);
+      return;
+    }
+
+    const { matched } = findMatches();
+
+    if (matched.size === 0) {
+      await animateFlip(() => {
+        swapCells(from, to);
+        selected = null;
+      }, 140);
+
+      const candyA = board?.[from.row]?.[from.col];
+      const candyB = board?.[to.row]?.[to.col];
+
+      const a = candyA ? pieceElsById.get(candyA.id) : null;
+      const b = candyB ? pieceElsById.get(candyB.id) : null;
+
+      if (a) {
+        a.classList.add('invalid');
+      }
+      if (b) {
+        b.classList.add('invalid');
+      }
+      playSfx('invalid');
+
+      await wait(220);
+      setLocked(false);
+      return;
+    }
+
     moves += 1;
     updateHud();
     playSfx('swap');
-    await resolveCascades(to, comboContext);
     selected = null;
+    await resolveCascades(to, null);
     if (concludeLevelIfNeeded()) {
       return;
     }
-    isLocked = false;
-    return;
+    setLocked(false);
+  } finally {
+    endBoardAnimation();
   }
-
-  const { matched } = findMatches();
-
-  if (matched.size === 0) {
-    await animateFlip(() => {
-      swapCells(from, to);
-      selected = null;
-    }, 140);
-
-    const candyA = board?.[from.row]?.[from.col];
-    const candyB = board?.[to.row]?.[to.col];
-
-    const a = candyA ? pieceElsById.get(candyA.id) : null;
-    const b = candyB ? pieceElsById.get(candyB.id) : null;
-
-    if (a) {
-      a.classList.add('invalid');
-    }
-    if (b) {
-      b.classList.add('invalid');
-    }
-    playSfx('invalid');
-
-    await wait(220);
-    isLocked = false;
-    return;
-  }
-
-  moves += 1;
-  updateHud();
-  playSfx('swap');
-  selected = null;
-  await resolveCascades(to, null);
-  if (concludeLevelIfNeeded()) {
-    return;
-  }
-  isLocked = false;
 }
 
 async function onGemClick(event) {
@@ -2225,7 +2302,8 @@ function resetGame() {
   score = 0;
   moves = 0;
   selected = null;
-  isLocked = false;
+  boardAnimationDepth = 0;
+  setLocked(false);
   pendingOutcome = null;
   lastGoalsMarkup = '';
   if (goalsRenderRaf) {
@@ -2258,7 +2336,8 @@ function resetGame() {
 
 piecesEl?.addEventListener('click', (event) => {
   onGemClick(event).catch(() => {
-    isLocked = false;
+    boardAnimationDepth = 0;
+    setLocked(false);
   });
 });
 

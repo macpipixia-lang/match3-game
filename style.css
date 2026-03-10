@@ -219,6 +219,10 @@ h1 {
   filter: brightness(1.08);
 }
 
+body.animating .btn:hover {
+  filter: none;
+}
+
 .btn:active {
   transform: translateY(1px) scale(0.99);
 }
@@ -317,6 +321,10 @@ h1 {
   will-change: transform;
 }
 
+.board-wrap--animating .pieces {
+  pointer-events: none;
+}
+
 .pieces .gem {
   position: absolute;
   top: 0;
@@ -372,6 +380,10 @@ h1 {
   padding: 0;
   position: relative;
   overflow: hidden;
+}
+
+.board-wrap--animating .gem {
+  cursor: default;
 }
 
 .gem.spawning {
