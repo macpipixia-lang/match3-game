@@ -93,9 +93,82 @@ h1 {
   text-shadow: 0 2px 10px rgb(0 0 0 / 25%);
 }
 
+.stat__value--compact {
+  font-size: 0.92rem;
+}
+
 .stat__dim {
   opacity: 0.7;
   margin-inline: 2px;
+}
+
+.goals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-start;
+}
+
+.goal-chip {
+  --goal-accent: rgb(245 158 11 / 0.82);
+  min-width: 118px;
+  display: grid;
+  gap: 4px;
+  padding: 9px 11px;
+  border-radius: 12px;
+  border: 1px solid rgb(255 255 255 / 12%);
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 0.08), rgb(255 255 255 / 0.03)),
+    rgb(2 6 23 / 32%);
+  text-align: left;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06%);
+}
+
+.goal-chip__label {
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgb(203 213 225 / 0.92);
+}
+
+.goal-chip__value {
+  font-size: 1rem;
+  font-weight: 850;
+  color: #fff;
+}
+
+.goal-chip__meta {
+  font-size: 0.78rem;
+  color: rgb(226 232 240 / 0.78);
+}
+
+.goal-chip--done {
+  border-color: rgb(34 197 94 / 32%);
+  background:
+    linear-gradient(180deg, rgb(34 197 94 / 0.18), rgb(34 197 94 / 0.05)),
+    rgb(2 6 23 / 32%);
+}
+
+.goal-chip--score {
+  min-width: 172px;
+}
+
+.goal-chip__progress {
+  position: relative;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.08);
+}
+
+.goal-chip__progress::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(var(--progress, 0) * 1%);
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--goal-accent), rgb(251 191 36 / 0.95));
+  box-shadow: 0 0 16px rgb(245 158 11 / 0.35);
 }
 
 .hud__actions {
@@ -239,6 +312,11 @@ h1 {
 }
 
 .gem {
+  --gem-overlay-opacity: 0;
+  --gem-overlay-bg: none;
+  --gem-overlay-shadow: none;
+  --gem-overlay-filter: none;
+  --gem-overlay-z: 2;
   width: var(--cell-size);
   height: var(--cell-size);
   border-radius: var(--radius-md);
@@ -264,6 +342,7 @@ h1 {
   content: '';
   position: absolute;
   inset: 8%;
+  z-index: 1;
   background-image: var(--gem-image);
   background-size: cover;
   background-repeat: no-repeat;
@@ -275,8 +354,12 @@ h1 {
   content: '';
   position: absolute;
   inset: 0;
-  opacity: 0;
   pointer-events: none;
+  z-index: var(--gem-overlay-z);
+  opacity: var(--gem-overlay-opacity);
+  background: var(--gem-overlay-bg);
+  box-shadow: var(--gem-overlay-shadow);
+  filter: var(--gem-overlay-filter);
 }
 
 .gem--0 { --gem-image: url('assets/candy0.svg'); --tile-bg: radial-gradient(circle at 30% 25%, #fecaca, #ef4444 70%); }
@@ -292,12 +375,12 @@ h1 {
 }
 
 .gem.gem--striped::after {
-  opacity: 0.9;
+  --gem-overlay-opacity: 0.9;
   border-radius: inherit;
 }
 
 .gem.gem--striped-row::after {
-  background:
+  --gem-overlay-bg:
     repeating-linear-gradient(
       0deg,
       rgb(255 255 255 / 0.9) 0,
@@ -308,7 +391,7 @@ h1 {
 }
 
 .gem.gem--striped-col::after {
-  background:
+  --gem-overlay-bg:
     repeating-linear-gradient(
       90deg,
       rgb(255 255 255 / 0.9) 0,
@@ -348,7 +431,7 @@ h1 {
 .gem.gem--color-bomb::after {
   inset: 28%;
   border-radius: 50%;
-  opacity: 1;
+  --gem-overlay-opacity: 1;
   background:
     radial-gradient(circle, rgb(255 255 255 / 0.95) 0 10%, rgb(255 255 255 / 0.2) 28%, rgb(255 255 255 / 0) 70%),
     radial-gradient(circle at 30% 30%, rgb(255 255 255 / 0.85) 0 6%, rgb(255 255 255 / 0) 55%);
@@ -356,7 +439,7 @@ h1 {
 
 .gem.gem--wrapped::after {
   inset: 10%;
-  opacity: 1;
+  --gem-overlay-opacity: 1;
   border-radius: 12px;
   background:
     /* center knot */
@@ -369,6 +452,56 @@ h1 {
     radial-gradient(circle at 30% 30%, rgb(255 255 255 / 0.45), rgb(255 255 255 / 0) 60%);
   mix-blend-mode: screen;
   box-shadow: inset 0 0 0 2px rgb(255 255 255 / 0.22);
+}
+
+.gem.gem--ice,
+.gem.gem--lock {
+  --gem-overlay-opacity: 1;
+}
+
+.gem.gem--ice::after,
+.gem.gem--lock::after {
+  inset: 0;
+  border-radius: inherit;
+}
+
+.gem.gem--ice {
+  --gem-overlay-bg:
+    linear-gradient(135deg, rgb(255 255 255 / 0.44), rgb(255 255 255 / 0.08) 34%, rgb(255 255 255 / 0.28) 62%, rgb(147 197 253 / 0.12)),
+    linear-gradient(115deg, rgb(255 255 255 / 0) 18%, rgb(255 255 255 / 0.34) 19% 22%, rgb(255 255 255 / 0) 23% 100%),
+    linear-gradient(18deg, rgb(255 255 255 / 0) 48%, rgb(191 219 254 / 0.7) 49% 52%, rgb(255 255 255 / 0) 53% 100%),
+    linear-gradient(152deg, rgb(255 255 255 / 0) 58%, rgb(255 255 255 / 0.34) 59% 61%, rgb(255 255 255 / 0) 62% 100%),
+    radial-gradient(circle at 24% 22%, rgb(255 255 255 / 0.7), rgb(255 255 255 / 0) 26%),
+    radial-gradient(circle at 70% 78%, rgb(191 219 254 / 0.34), rgb(255 255 255 / 0) 35%);
+  --gem-overlay-shadow:
+    inset 0 0 0 1px rgb(224 242 254 / 0.9),
+    inset 0 0 0 4px rgb(125 211 252 / 0.18);
+}
+
+.gem.gem--lock {
+  --gem-overlay-bg:
+    radial-gradient(circle at 50% 50%, rgb(15 23 42 / 0) 56%, rgb(15 23 42 / 0.42) 72%, rgb(248 250 252 / 0.88) 73% 76%, rgb(15 23 42 / 0.26) 77%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cg fill='none' stroke='%23f8fafc' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M19 29v-7c0-7.2 5.8-13 13-13s13 5.8 13 13v7'/%3E%3Crect x='14' y='29' width='36' height='25' rx='7' fill='%230f172a' fill-opacity='.72'/%3E%3Cpath d='M32 38v8'/%3E%3Ccircle cx='32' cy='37' r='3' fill='%23f8fafc' stroke='none'/%3E%3C/g%3E%3C/svg%3E"),
+    radial-gradient(circle at 75% 18%, rgb(255 255 255 / 0.34), rgb(255 255 255 / 0) 28%);
+  --gem-overlay-shadow:
+    inset 0 0 0 1px rgb(248 250 252 / 0.18),
+    inset 0 0 0 4px rgb(15 23 42 / 0.2);
+  --gem-overlay-filter: drop-shadow(0 2px 3px rgb(15 23 42 / 0.35));
+}
+
+.gem.gem--lock::after {
+  background-repeat: no-repeat, no-repeat, no-repeat;
+  background-size: cover, 20px 20px, 100% 100%;
+  background-position: center, right 5px top 5px, center;
+}
+
+.gem.gem--ice.gem--striped-row,
+.gem.gem--ice.gem--striped-col,
+.gem.gem--lock.gem--striped-row,
+.gem.gem--lock.gem--striped-col,
+.gem.gem--ice.gem--wrapped,
+.gem.gem--lock.gem--wrapped {
+  --gem-overlay-z: 3;
 }
 
 .gem.gem--wrapped::before {
@@ -468,6 +601,20 @@ h1 {
 
 .combo-toast.show {
   animation: combo-pop 650ms ease-out forwards;
+}
+
+@media (max-width: 640px) {
+  .hud__stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .goal-chip {
+    min-width: calc(50% - 4px);
+  }
+
+  .goal-chip--score {
+    min-width: 100%;
+  }
 }
 
 @keyframes gem-clear {

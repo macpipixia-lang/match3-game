@@ -32,6 +32,7 @@ const piecesEl = document.getElementById('pieces');
 const fxEl = document.getElementById('fx');
 const scoreEl = document.getElementById('score');
 const targetScoreEl = document.getElementById('targetScore');
+const goalsEl = document.getElementById('goals');
 const levelEl = document.getElementById('level');
 const bestScoreEl = document.getElementById('bestScore');
 const movesEl = document.getElementById('moves');
@@ -266,11 +267,95 @@ function formatGoalsForHud(level) {
   return parts.join(' · ');
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function renderGoalChip({ label, value, meta = '', done = false, modifier = '', progress = null }) {
+  const classes = ['goal-chip'];
+  if (modifier) classes.push(`goal-chip--${modifier}`);
+  if (done) classes.push('goal-chip--done');
+
+  const progressMarkup = typeof progress === 'number'
+    ? `<div class="goal-chip__progress" style="--progress:${progress.toFixed(2)}" aria-hidden="true"></div>`
+    : '';
+  const metaMarkup = meta ? `<span class="goal-chip__meta">${escapeHtml(meta)}</span>` : '';
+
+  return `
+    <article class="${classes.join(' ')}">
+      <span class="goal-chip__label">${escapeHtml(label)}</span>
+      <span class="goal-chip__value">${escapeHtml(value)}</span>
+      ${progressMarkup}
+      ${metaMarkup}
+    </article>
+  `;
+}
+
+function renderGoals(level) {
+  if (!goalsEl) return;
+
+  const goals = level.goals || { score: level.targetScore };
+  const chips = [];
+
+  if (typeof goals.score === 'number') {
+    const progress = goals.score > 0 ? Math.min(100, (score / goals.score) * 100) : 100;
+    chips.push(renderGoalChip({
+      label: '分数目标',
+      value: `${score} / ${goals.score}`,
+      meta: score >= goals.score ? '已完成' : `还差 ${Math.max(0, goals.score - score)}`,
+      done: score >= goals.score,
+      modifier: 'score',
+      progress,
+    }));
+  }
+
+  if (goals.collect) {
+    Object.entries(goals.collect).forEach(([color, total]) => {
+      const remaining = Math.max(0, goalState?.collectRemaining?.[color] ?? total);
+      const collected = Math.max(0, total - remaining);
+      chips.push(renderGoalChip({
+        label: `收集 ${color}`,
+        value: `${remaining}`,
+        meta: `${collected} / ${total}`,
+        done: remaining === 0,
+      }));
+    });
+  }
+
+  if (typeof goals.clearIce === 'number') {
+    const remaining = Math.max(0, goalState?.iceRemaining ?? goals.clearIce);
+    chips.push(renderGoalChip({
+      label: '清除冰块',
+      value: `${remaining}`,
+      meta: remaining === 0 ? '已完成' : `剩余 ${remaining}`,
+      done: remaining === 0,
+    }));
+  }
+
+  if (typeof goals.clearLocks === 'number') {
+    const remaining = Math.max(0, goalState?.lockRemaining ?? goals.clearLocks);
+    chips.push(renderGoalChip({
+      label: '清除锁链',
+      value: `${remaining}`,
+      meta: remaining === 0 ? '已完成' : `剩余 ${remaining}`,
+      done: remaining === 0,
+    }));
+  }
+
+  goalsEl.innerHTML = chips.join('');
+}
+
 function updateHud() {
   scoreEl.textContent = String(score);
   movesEl.textContent = String(moves);
   const level = LEVELS[currentLevelIndex];
   if (targetScoreEl) targetScoreEl.textContent = formatGoalsForHud(level);
+  renderGoals(level);
   if (moveLimitEl) moveLimitEl.textContent = String(level.moveLimit);
   if (levelEl) levelEl.textContent = String(currentLevelIndex + 1);
   if (bestScoreEl) bestScoreEl.textContent = String(bestScore);
@@ -279,12 +364,19 @@ function updateHud() {
 function gemClasses(row, col) {
   const classes = ['gem'];
   const candy = board[row][col];
+  const blocker = blockerAt(row, col);
 
   if (!candy) {
     return classes.join(' ');
   }
 
   classes.push(`gem--${candy.color}`);
+
+  if (blocker?.kind === 'ice') {
+    classes.push('gem--ice');
+  } else if (blocker?.kind === 'lock') {
+    classes.push('gem--lock');
+  }
 
   if (candy.kind === 'striped') {
     classes.push('gem--striped');
