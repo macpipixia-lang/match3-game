@@ -26,6 +26,14 @@ const LEVELS = CONFIG?.levels ?? [
   { targetScore: 1300, moveLimit: 18 },
   { targetScore: 1750, moveLimit: 20 },
 ];
+const GEM_COLOR_META = {
+  '0': { label: '红', className: 'gem--0' },
+  '1': { label: '蓝', className: 'gem--1' },
+  '2': { label: '绿', className: 'gem--2' },
+  '3': { label: '黄', className: 'gem--3' },
+  '4': { label: '紫', className: 'gem--4' },
+  '5': { label: '粉', className: 'gem--5' },
+};
 
 const boardEl = document.getElementById('board');
 const piecesEl = document.getElementById('pieces');
@@ -118,6 +126,21 @@ function createColorBomb(color) {
 
 function keyOf(row, col) {
   return `${row},${col}`;
+}
+
+function getCollectGoalMeta(color) {
+  const colorKey = String(color);
+  return GEM_COLOR_META[colorKey] ?? {
+    label: `颜色 ${colorKey}`,
+    className: '',
+  };
+}
+
+function renderGoalGemIcon(color) {
+  const { label, className } = getCollectGoalMeta(color);
+  const classes = ['goal-chip__gem'];
+  if (className) classes.push(className);
+  return `<span class="${classes.join(' ')}" aria-hidden="true" title="${escapeHtml(label)}"></span>`;
 }
 
 function parseKey(key) {
@@ -253,7 +276,8 @@ function formatGoalsForHud(level) {
   if (goals.collect) {
     Object.entries(goals.collect).forEach(([color, total]) => {
       const remaining = Math.max(0, (goalState?.collectRemaining?.[color] ?? total));
-      parts.push(`收集${color}:${remaining}`);
+      const { label } = getCollectGoalMeta(color);
+      parts.push(`收集${label}:${remaining}`);
     });
   }
   if (typeof goals.clearIce === 'number') {
@@ -276,7 +300,7 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;');
 }
 
-function renderGoalChip({ label, value, meta = '', done = false, modifier = '', progress = null }) {
+function renderGoalChip({ label, value, meta = '', done = false, modifier = '', progress = null, iconMarkup = '' }) {
   const classes = ['goal-chip'];
   if (modifier) classes.push(`goal-chip--${modifier}`);
   if (done) classes.push('goal-chip--done');
@@ -285,10 +309,13 @@ function renderGoalChip({ label, value, meta = '', done = false, modifier = '', 
     ? `<div class="goal-chip__progress" style="--progress:${progress.toFixed(2)}" aria-hidden="true"></div>`
     : '';
   const metaMarkup = meta ? `<span class="goal-chip__meta">${escapeHtml(meta)}</span>` : '';
+  const labelMarkup = iconMarkup
+    ? `<span class="goal-chip__label">${iconMarkup}<span>${escapeHtml(label)}</span></span>`
+    : `<span class="goal-chip__label">${escapeHtml(label)}</span>`;
 
   return `
     <article class="${classes.join(' ')}">
-      <span class="goal-chip__label">${escapeHtml(label)}</span>
+      ${labelMarkup}
       <span class="goal-chip__value">${escapeHtml(value)}</span>
       ${progressMarkup}
       ${metaMarkup}
@@ -318,11 +345,13 @@ function renderGoals(level) {
     Object.entries(goals.collect).forEach(([color, total]) => {
       const remaining = Math.max(0, goalState?.collectRemaining?.[color] ?? total);
       const collected = Math.max(0, total - remaining);
+      const { label } = getCollectGoalMeta(color);
       chips.push(renderGoalChip({
-        label: `收集 ${color}`,
+        label: `收集 ${label}`,
         value: `${remaining}`,
         meta: `${collected} / ${total}`,
         done: remaining === 0,
+        iconMarkup: renderGoalGemIcon(color),
       }));
     });
   }
