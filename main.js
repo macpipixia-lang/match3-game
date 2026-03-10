@@ -2002,6 +2002,51 @@ async function resolveCascades(preferredSpawnCell, initialForcedContext = null) 
     let forcedContext = initialForcedContext;
     let cascadeDepth = 0;
 
+    function hasRecoverableHoles() {
+      for (let row = 0; row < BOARD_SIZE; row += 1) {
+        for (let col = 0; col < BOARD_SIZE; col += 1) {
+          if (isStoneCell(row, col)) continue;
+          if (board[row][col] === null) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    async function runGravityStep(spawnPlans) {
+      const spawns = (() => {
+        applySpawnPlans(spawnPlans);
+        return dropAndFill();
+      })();
+
+      // Set up newly spawned pieces above the board before animating into their final slots.
+      for (const spawn of spawns) {
+        const el = ensurePieceEl(spawn.candy.id, spawn.finalRow, spawn.col);
+        const pos = positionForCell(spawn.spawnRow, spawn.col);
+        el.classList.add('spawning');
+        el.style.transitionDuration = '0ms';
+        el.style.setProperty('--tx', `${pos.x}px`);
+        el.style.setProperty('--ty', `${pos.y}px`);
+        el.style.visibility = 'visible';
+      }
+
+      await nextFrame();
+      for (const spawn of spawns) {
+        const el = pieceElsById.get(spawn.candy.id);
+        if (el && el.style.transitionDuration) {
+          el.style.transitionDuration = '';
+        }
+      }
+      renderBoard({ durationMs: DROP_DELAY_MS });
+      await wait(DROP_DELAY_MS);
+
+      for (const spawn of spawns) {
+        const el = pieceElsById.get(spawn.candy.id);
+        if (el) el.classList.remove('spawning');
+      }
+    }
+
     async function runPulse(initialSet, options = {}) {
       const pulseContext = expandClearSet(initialSet, options.protectedCells || new Set(), options.colorBombOverrides || new Map());
       const pulseSet = pulseContext.clearSet;
@@ -2104,36 +2149,17 @@ async function resolveCascades(preferredSpawnCell, initialForcedContext = null) 
       }
 
       // True gravity: create new candies above the board and let *all* candies fall together.
-      const spawns = (() => {
-        applySpawnPlans(spawnPlans);
-        return dropAndFill();
-      })();
+      await runGravityStep(spawnPlans);
+    }
 
-      // Set up newly spawned pieces above the board before animating into their final slots.
-      for (const spawn of spawns) {
-        const el = ensurePieceEl(spawn.candy.id, spawn.finalRow, spawn.col);
-        const pos = positionForCell(spawn.spawnRow, spawn.col);
-        el.classList.add('spawning');
-        el.style.transitionDuration = '0ms';
-        el.style.setProperty('--tx', `${pos.x}px`);
-        el.style.setProperty('--ty', `${pos.y}px`);
-        el.style.visibility = 'visible';
+    if (hasRecoverableHoles()) {
+      const recoveryPerfStart = perfNow();
+      let recoveryIterations = 0;
+      for (let i = 0; i < 3 && hasRecoverableHoles(); i += 1) {
+        recoveryIterations += 1;
+        await runGravityStep(new Map());
       }
-
-      await nextFrame();
-      for (const spawn of spawns) {
-        const el = pieceElsById.get(spawn.candy.id);
-        if (el && el.style.transitionDuration) {
-          el.style.transitionDuration = '';
-        }
-      }
-      renderBoard({ durationMs: DROP_DELAY_MS });
-      await wait(DROP_DELAY_MS);
-
-      for (const spawn of spawns) {
-        const el = pieceElsById.get(spawn.candy.id);
-        if (el) el.classList.remove('spawning');
-      }
+      perfLog('resolveCascades recovery-warning', recoveryPerfStart, `iterations=${recoveryIterations}`);
     }
   } finally {
     endBoardAnimation();
