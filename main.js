@@ -63,6 +63,7 @@ let isLocked = false;
 let audioEnabled = false;
 let debugEnabled = false;
 let comboToastTimer = 0;
+let comboToastRaf = 0;
 let currentLevelIndex = 0;
 let bestScore = 0;
 let pendingOutcome = null;
@@ -74,6 +75,8 @@ let cachedCellRects = null;
 let cachedCellPositions = null; // { x, y }[BOARD_SIZE][BOARD_SIZE] relative to board-wrap
 let cachedStepX = null;
 let cachedStepY = null;
+let cachedFallbackStepX = 62;
+let cachedFallbackStepY = 62;
 
 // Pieces overlay: each candy is its own absolutely-positioned element.
 let candyIdSeq = 0;
@@ -81,6 +84,17 @@ const pieceElsById = new Map(); // id -> HTMLElement
 
 const missingSfx = new Set();
 const sfxPool = new Map();
+
+function perfNow() {
+  return debugEnabled ? performance.now() : 0;
+}
+
+function perfLog(label, startMs, extra = '') {
+  if (!debugEnabled || !startMs) return;
+  const elapsed = performance.now() - startMs;
+  const suffix = extra ? ` ${extra}` : '';
+  console.log(`[perf] ${label} ${elapsed.toFixed(1)}ms${suffix}`);
+}
 
 function randGem() {
   return GEM_TYPES[Math.floor(Math.random() * GEM_TYPES.length)];
@@ -448,6 +462,18 @@ function ensureBoardDom() {
   }
 }
 
+function readRootCssPx(name, fallback) {
+  const value = Number.parseFloat(window.getComputedStyle(document.documentElement).getPropertyValue(name));
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function cacheFallbackGridMetrics() {
+  const cellSize = readRootCssPx('--cell-size', 56);
+  const gap = readRootCssPx('--gap', 6);
+  cachedFallbackStepX = cellSize + gap;
+  cachedFallbackStepY = cellSize + gap;
+}
+
 function cacheBoardGeometry() {
   if (!cellEls) return;
   const wrap = boardEl.closest('.board-wrap');
@@ -479,6 +505,7 @@ function cacheBoardGeometry() {
 }
 
 window.addEventListener('resize', () => {
+  cacheFallbackGridMetrics();
   if (cellEls) cacheBoardGeometry();
 });
 
@@ -488,16 +515,18 @@ function updateBoardDom() {
   for (let row = 0; row < BOARD_SIZE; row += 1) {
     for (let col = 0; col < BOARD_SIZE; col += 1) {
       const btn = cellEls[row][col];
-      btn.className = 'cell';
-
       const b = blockerAt(row, col);
-      if (!b) continue;
-      if (b.kind === 'stone') {
-        btn.classList.add('cell--stone');
-      } else if (b.kind === 'ice') {
-        btn.classList.add('cell--ice');
-      } else if (b.kind === 'lock') {
-        btn.classList.add('cell--lock');
+      const kind = b?.kind || '';
+      if (btn.dataset.blockerKind === kind) continue;
+      btn.dataset.blockerKind = kind;
+      if (kind === 'stone') {
+        btn.className = 'cell cell--stone';
+      } else if (kind === 'ice') {
+        btn.className = 'cell cell--ice';
+      } else if (kind === 'lock') {
+        btn.className = 'cell cell--lock';
+      } else {
+        btn.className = 'cell';
       }
     }
   }
@@ -512,9 +541,7 @@ function positionForCell(row, col) {
 
   if (!base || !top) {
     // Fallback: assume grid starts at (0,0) relative to wrap.
-    const cellSize = Number.parseFloat(window.getComputedStyle(document.documentElement).getPropertyValue('--cell-size')) || 56;
-    const gap = Number.parseFloat(window.getComputedStyle(document.documentElement).getPropertyValue('--gap')) || 6;
-    const step = cellSize + gap;
+    const step = Number.isFinite(cachedFallbackStepX) ? cachedFallbackStepX : 62;
     return { x: col * step, y: row * step };
   }
 
@@ -529,17 +556,8 @@ function positionForCell(row, col) {
   };
 }
 
-function ensurePieceEl(candyId, row, col) {
-  if (!piecesEl) {
-    throw new Error('#pieces layer missing');
-  }
-
-  let el = pieceElsById.get(candyId);
-  if (el) return el;
-
-  // Prevent a 1-frame flash at (0,0) when the element is first appended.
-  // New gems are absolutely positioned at top/left 0 by default until we set transform.
-  el = document.createElement('button');
+function createPieceEl(candyId, row, col) {
+  const el = document.createElement('button');
   el.type = 'button';
   el.className = 'gem';
   el.dataset.id = String(candyId);
@@ -552,18 +570,37 @@ function ensurePieceEl(candyId, row, col) {
   const pos = positionForCell(row, col);
   el.style.setProperty('--tx', `${pos.x}px`);
   el.style.setProperty('--ty', `${pos.y}px`);
-
   el.setAttribute('aria-label', `Candy at row ${row + 1}, col ${col + 1}`);
-  piecesEl.appendChild(el);
+  return el;
+}
+
+function ensurePieceEl(candyId, row, col, attachFrag = null) {
+  if (!piecesEl) {
+    throw new Error('#pieces layer missing');
+  }
+
+  let el = pieceElsById.get(candyId);
+  if (el) return el;
+
+  el = createPieceEl(candyId, row, col);
+  if (attachFrag) {
+    attachFrag.appendChild(el);
+  } else {
+    piecesEl.appendChild(el);
+  }
   pieceElsById.set(candyId, el);
   return el;
 }
 
 function syncPiecesDom({ durationMs = 0 } = {}) {
+  const perfStart = perfNow();
   ensureBoardDom();
   if (!piecesEl) return;
+  piecesEl.style.setProperty('--move-duration', `${durationMs}ms`);
 
   const seen = new Set();
+  const newPiecesFrag = document.createDocumentFragment();
+  let createdCount = 0;
 
   for (let row = 0; row < BOARD_SIZE; row += 1) {
     for (let col = 0; col < BOARD_SIZE; col += 1) {
@@ -571,23 +608,33 @@ function syncPiecesDom({ durationMs = 0 } = {}) {
       if (!candy) continue;
       seen.add(candy.id);
 
-      const el = ensurePieceEl(candy.id, row, col);
-      el.dataset.row = String(row);
-      el.dataset.col = String(col);
+      const existingEl = pieceElsById.get(candy.id);
+      const el = existingEl || ensurePieceEl(candy.id, row, col, newPiecesFrag);
+      if (!existingEl) createdCount += 1;
+      const rowText = String(row);
+      const colText = String(col);
+      if (el.dataset.row !== rowText) el.dataset.row = rowText;
+      if (el.dataset.col !== colText) el.dataset.col = colText;
 
       const specialLabel = candy?.kind === 'wrapped' ? ' (Wrapped candy)' : '';
-      el.setAttribute('aria-label', `Candy at row ${row + 1}, col ${col + 1}${specialLabel}`);
-      el.className = gemClasses(row, col);
-
-      el.style.transitionProperty = 'transform, opacity, filter';
-      el.style.transitionDuration = `${durationMs}ms`;
-      el.style.transitionTimingFunction = 'cubic-bezier(0.18, 0.85, 0.32, 1)';
+      const ariaLabel = `Candy at row ${row + 1}, col ${col + 1}${specialLabel}`;
+      if (el.getAttribute('aria-label') !== ariaLabel) {
+        el.setAttribute('aria-label', ariaLabel);
+      }
+      const className = gemClasses(row, col);
+      if (el.className !== className) {
+        el.className = className;
+      }
 
       const pos = positionForCell(row, col);
       el.style.setProperty('--tx', `${pos.x}px`);
       el.style.setProperty('--ty', `${pos.y}px`);
-      el.style.visibility = 'visible';
+      if (el.style.visibility !== 'visible') el.style.visibility = 'visible';
+      if (el.style.transitionDuration) el.style.transitionDuration = '';
     }
+  }
+  if (createdCount > 0) {
+    piecesEl.appendChild(newPiecesFrag);
   }
 
   // Remove stale piece elements (should be rare).
@@ -608,6 +655,7 @@ function syncPiecesDom({ durationMs = 0 } = {}) {
       });
     }, CLEAR_DELAY_MS);
   }
+  perfLog('syncPiecesDom', perfStart, `duration=${durationMs} created=${createdCount} stale=${stale.length}`);
 }
 
 function nextFrame() {
@@ -628,6 +676,7 @@ function renderBoard({ durationMs = 0 } = {}) {
 }
 
 function findMatches() {
+  const perfStart = perfNow();
   // Straight-line matches only. Shape (T/L) is derived by analyzing connected components in the matched set.
   const matched = new Set();
   const lineGroups = [];
@@ -682,6 +731,7 @@ function findMatches() {
     }
   }
 
+  perfLog('findMatches', perfStart, `matched=${matched.size} groups=${lineGroups.length}`);
   return { matched, lineGroups };
 }
 
@@ -871,9 +921,60 @@ function playSfx(name) {
   }
 }
 
+const FX_POOL_MAX = 280;
+const PULSE_MAX_PER_CLEAR = 16;
+const WRAPPED_BLAST_MAX_PER_CLEAR = 8;
+const FX_SAMPLE_THRESHOLD = 20;
+
+const fxPools = {
+  sparkle: [],
+  pulse: [],
+  wrappedBlast: [],
+  beamRow: [],
+  beamCol: [],
+};
+const activeFxNodes = new Set();
+let fxCleanupListenerBound = false;
+
+function ensureFxCleanupListener() {
+  if (!fxEl || fxCleanupListenerBound) return;
+  fxEl.addEventListener('animationend', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (!activeFxNodes.has(target)) return;
+    releaseFxNode(target);
+  });
+  fxCleanupListenerBound = true;
+}
+
+function acquireFxNode(poolType, className) {
+  const pool = fxPools[poolType];
+  const el = pool.length > 0 ? pool.pop() : document.createElement('div');
+  el.className = className;
+  el.dataset.fxPoolType = poolType;
+  activeFxNodes.add(el);
+  return el;
+}
+
+function releaseFxNode(el) {
+  if (!activeFxNodes.has(el)) return;
+  activeFxNodes.delete(el);
+  el.remove();
+
+  const poolType = el.dataset.fxPoolType;
+  const pool = poolType ? fxPools[poolType] : null;
+  if (!pool || pool.length >= FX_POOL_MAX) return;
+
+  el.removeAttribute('style');
+  pool.push(el);
+}
+
 function clearFxLayer() {
   if (!fxEl) return;
-  fxEl.innerHTML = '';
+  ensureFxCleanupListener();
+  if (activeFxNodes.size === 0) return;
+  const nodes = Array.from(activeFxNodes);
+  nodes.forEach((node) => releaseFxNode(node));
 }
 
 const SPARKLE_MAX_PER_WAVE = 120;
@@ -907,6 +1008,7 @@ function hueForGemColor(color) {
 function addSparklesFx(row, col, count, { hue = 60, power = 1 } = {}) {
   if (!fxEl || !cachedBoardWrapRect || !cachedCellRects) return 0;
   if (!count || count <= 0) return 0;
+  ensureFxCleanupListener();
 
   const boardRect = cachedBoardWrapRect;
   const cellRect = cachedCellRects[row][col];
@@ -919,8 +1021,7 @@ function addSparklesFx(row, col, count, { hue = 60, power = 1 } = {}) {
 
   const frag = document.createDocumentFragment();
   for (let i = 0; i < count; i += 1) {
-    const s = document.createElement('div');
-    s.className = 'sparkle';
+    const s = acquireFxNode('sparkle', 'sparkle');
 
     const startX = baseX + (Math.random() * 2 - 1) * maxOffset;
     const startY = baseY + (Math.random() * 2 - 1) * maxOffset;
@@ -934,22 +1035,13 @@ function addSparklesFx(row, col, count, { hue = 60, power = 1 } = {}) {
     // Keep duration within CLEAR_DELAY_MS so the layer reset doesn't cut the tail.
     const dur = (170 + Math.random() * 90) * (1 / (0.9 + power * 0.1));
 
-    s.style.left = `${startX}px`;
-    s.style.top = `${startY}px`;
+    s.style.setProperty('--x', `${startX.toFixed(2)}px`);
+    s.style.setProperty('--y', `${startY.toFixed(2)}px`);
     s.style.setProperty('--dx', `${dx.toFixed(2)}px`);
     s.style.setProperty('--dy', `${dy.toFixed(2)}px`);
     s.style.setProperty('--s', `${size.toFixed(2)}px`);
     s.style.setProperty('--dur', `${dur.toFixed(0)}ms`);
     s.style.setProperty('--h', String(hue));
-
-    // Auto-cleanup to avoid FX DOM growth during combo chains.
-    s.addEventListener(
-      'animationend',
-      () => {
-        s.remove();
-      },
-      { once: true },
-    );
 
     frag.appendChild(s);
   }
@@ -959,12 +1051,13 @@ function addSparklesFx(row, col, count, { hue = 60, power = 1 } = {}) {
 
 function addBeamFx(kind, row, col) {
   if (!fxEl || !cachedBoardWrapRect || !cachedCellRects) return;
+  ensureFxCleanupListener();
 
   const boardRect = cachedBoardWrapRect;
   const cellRect = cachedCellRects[row][col];
 
-  const beam = document.createElement('div');
-  beam.className = `beam ${kind}`;
+  const poolType = kind === 'row' ? 'beamRow' : 'beamCol';
+  const beam = acquireFxNode(poolType, `beam ${kind}`);
 
   if (kind === 'row') {
     beam.style.left = '10px';
@@ -981,45 +1074,56 @@ function addBeamFx(kind, row, col) {
 
 function addPulseFx(row, col) {
   if (!fxEl || !cachedBoardWrapRect || !cachedCellRects) return;
+  ensureFxCleanupListener();
 
   const boardRect = cachedBoardWrapRect;
   const cellRect = cachedCellRects[row][col];
 
-  const pulse = document.createElement('div');
-  pulse.className = 'pulse';
+  const pulse = acquireFxNode('pulse', 'pulse');
   const size = Math.max(cellRect.width, cellRect.height) * 1.2;
-  pulse.style.width = `${size}px`;
-  pulse.style.height = `${size}px`;
-  pulse.style.left = `${cellRect.left - boardRect.left + cellRect.width / 2 - size / 2}px`;
-  pulse.style.top = `${cellRect.top - boardRect.top + cellRect.height / 2 - size / 2}px`;
+  pulse.style.setProperty('--size', `${size.toFixed(2)}px`);
+  pulse.style.setProperty('--x', `${(cellRect.left - boardRect.left + cellRect.width / 2 - size / 2).toFixed(2)}px`);
+  pulse.style.setProperty('--y', `${(cellRect.top - boardRect.top + cellRect.height / 2 - size / 2).toFixed(2)}px`);
 
   fxEl.appendChild(pulse);
 }
 
 function addWrappedBlastFx(row, col) {
   if (!fxEl || !cachedBoardWrapRect || !cachedCellRects) return;
+  ensureFxCleanupListener();
 
   const boardRect = cachedBoardWrapRect;
   const cellRect = cachedCellRects[row][col];
 
-  const blast = document.createElement('div');
-  blast.className = 'wrapped-blast';
+  const blast = acquireFxNode('wrappedBlast', 'wrapped-blast');
   const size = Math.max(cellRect.width, cellRect.height) * 3.2;
-  blast.style.width = `${size}px`;
-  blast.style.height = `${size}px`;
-  blast.style.left = `${cellRect.left - boardRect.left + cellRect.width / 2 - size / 2}px`;
-  blast.style.top = `${cellRect.top - boardRect.top + cellRect.height / 2 - size / 2}px`;
+  blast.style.setProperty('--size', `${size.toFixed(2)}px`);
+  blast.style.setProperty('--x', `${(cellRect.left - boardRect.left + cellRect.width / 2 - size / 2).toFixed(2)}px`);
+  blast.style.setProperty('--y', `${(cellRect.top - boardRect.top + cellRect.height / 2 - size / 2).toFixed(2)}px`);
 
   fxEl.appendChild(blast);
 }
 
+function sampleCells(cells, maxCount) {
+  if (!cells || cells.length <= maxCount) return cells || [];
+  if (maxCount <= 0) return [];
+  const stride = Math.ceil(cells.length / maxCount);
+  const sampled = [];
+  for (let i = 0; i < cells.length; i += stride) {
+    sampled.push(cells[i]);
+    if (sampled.length >= maxCount) break;
+  }
+  return sampled;
+}
+
 function spawnFxForClearSet(matches, fxOverrides = null) {
+  const perfStart = perfNow();
   clearFxLayer();
 
   const rowBeams = new Set(fxOverrides?.rowBeams || []);
   const colBeams = new Set(fxOverrides?.colBeams || []);
-  const pulses = [...(fxOverrides?.pulses || [])];
-  const wrappedBlasts = [...(fxOverrides?.wrappedBlasts || [])];
+  let pulses = [...(fxOverrides?.pulses || [])];
+  let wrappedBlasts = [...(fxOverrides?.wrappedBlasts || [])];
 
   const clearCount = matches.size;
 
@@ -1037,6 +1141,11 @@ function spawnFxForClearSet(matches, fxOverrides = null) {
       wrappedBlasts.push({ row, col });
     }
   });
+
+  if (matches.size >= FX_SAMPLE_THRESHOLD) {
+    pulses = sampleCells(pulses, PULSE_MAX_PER_CLEAR);
+    wrappedBlasts = sampleCells(wrappedBlasts, WRAPPED_BLAST_MAX_PER_CLEAR);
+  }
 
   rowBeams.forEach((row) => addBeamFx('row', row, 0));
   colBeams.forEach((col) => addBeamFx('col', 0, col));
@@ -1086,14 +1195,17 @@ function spawnFxForClearSet(matches, fxOverrides = null) {
 
     budget -= addSparklesFx(row, col, actual, { hue, power });
   });
+  perfLog('spawnFxForClearSet', perfStart, `clear=${clearCount} sparkBudget=${Math.min(SPARKLE_MAX_PER_WAVE, SPARKLE_MAX_PER_CLEAR) - budget}`);
 }
 
 async function animateClear(matches, fxOverrides = null) {
+  const perfStart = perfNow();
   if (matches.size >= BIG_CLEAR_SHAKE_THRESHOLD) {
     boardEl.classList.add('board-shake');
   }
 
   spawnFxForClearSet(matches, fxOverrides);
+  await nextFrame();
 
   matches.forEach((key) => {
     const { row, col } = parseKey(key);
@@ -1108,6 +1220,7 @@ async function animateClear(matches, fxOverrides = null) {
   await wait(CLEAR_DELAY_MS);
   boardEl.classList.remove('board-shake');
   clearFxLayer();
+  perfLog('animateClear', perfStart, `clear=${matches.size}`);
 }
 
 function applyGoalProgressForCandy(candy) {
@@ -1517,9 +1630,14 @@ function showComboToast(text) {
   if (!comboToastEl || !text) return;
   comboToastEl.textContent = text;
   comboToastEl.classList.remove('show');
-  // Force restart of keyframes when combos happen back-to-back.
-  void comboToastEl.offsetWidth;
-  comboToastEl.classList.add('show');
+  if (comboToastRaf) {
+    window.cancelAnimationFrame(comboToastRaf);
+  }
+  comboToastRaf = window.requestAnimationFrame(() => {
+    comboToastRaf = window.requestAnimationFrame(() => {
+      comboToastEl.classList.add('show');
+    });
+  });
   if (comboToastTimer) {
     window.clearTimeout(comboToastTimer);
   }
@@ -1854,6 +1972,12 @@ async function resolveCascades(preferredSpawnCell, initialForcedContext = null) 
     }
 
     await nextFrame();
+    for (const spawn of spawns) {
+      const el = pieceElsById.get(spawn.candy.id);
+      if (el && el.style.transitionDuration) {
+        el.style.transitionDuration = '';
+      }
+    }
     renderBoard({ durationMs: DROP_DELAY_MS });
     await wait(DROP_DELAY_MS);
 
@@ -2048,6 +2172,10 @@ function resetGame() {
   clearFxLayer();
   hideLevelOverlay();
   if (comboToastEl) {
+    if (comboToastRaf) {
+      window.cancelAnimationFrame(comboToastRaf);
+      comboToastRaf = 0;
+    }
     comboToastEl.classList.remove('show');
   }
 }
@@ -2089,4 +2217,5 @@ if (overlayActionBtn) {
 loadProgress();
 loadAudioPreference();
 loadDebugPreference();
+cacheFallbackGridMetrics();
 resetGame();
