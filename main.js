@@ -733,10 +733,15 @@ function nextFrame() {
 }
 
 async function animateFlip(updateFn, durationMs) {
-  // Pieces are absolutely positioned; simply updating transforms yields the animation.
-  updateFn();
-  renderBoard({ durationMs });
-  await wait(durationMs);
+  beginBoardAnimation();
+  try {
+    // Pieces are absolutely positioned; simply updating transforms yields the animation.
+    updateFn();
+    renderBoard({ durationMs });
+    await wait(durationMs);
+  } finally {
+    endBoardAnimation();
+  }
 }
 
 
@@ -1991,142 +1996,147 @@ function buildComboClearContext(from, to) {
 }
 
 async function resolveCascades(preferredSpawnCell, initialForcedContext = null) {
-  let preferred = preferredSpawnCell;
-  let forcedContext = initialForcedContext;
-  let cascadeDepth = 0;
+  beginBoardAnimation();
+  try {
+    let preferred = preferredSpawnCell;
+    let forcedContext = initialForcedContext;
+    let cascadeDepth = 0;
 
-  async function runPulse(initialSet, options = {}) {
-    const pulseContext = expandClearSet(initialSet, options.protectedCells || new Set(), options.colorBombOverrides || new Map());
-    const pulseSet = pulseContext.clearSet;
-    if (pulseSet.size === 0) {
-      return 0;
-    }
-
-    const targetKeys = options.preClearTargets || pulseSet;
-    await animatePreClearTargeting(targetKeys);
-
-    cascadeDepth += 1;
-    const comboWord = comboWordFor(pulseSet.size, cascadeDepth);
-    if (comboWord) {
-      showComboToast(comboWord);
-      playSfx('combo');
-    }
-
-    await animateClear(pulseSet, options.fx || null);
-    playSfx('clear');
-    removeMatches(pulseSet);
-
-    const secondInitial = new Set(options.secondPulseInitial || []);
-    if (!options.suppressWrappedSecondPulse) {
-      pulseContext.wrappedCenters.forEach((centerKey) => {
-        const { row, col } = parseKey(centerKey);
-        for (let dr = -1; dr <= 1; dr += 1) {
-          for (let dc = -1; dc <= 1; dc += 1) {
-            secondInitial.add(keyOf(row + dr, col + dc));
-          }
-        }
-      });
-    }
-    if (secondInitial.size > 0) {
-      await wait(WRAPPED_PULSE_DELAY_MS);
-      const secondContext = expandClearSet(secondInitial);
-      if (secondContext.clearSet.size > 0) {
-        await animateClear(secondContext.clearSet, options.secondPulseFx || null);
-        playSfx('clear');
-        removeMatches(secondContext.clearSet);
+    async function runPulse(initialSet, options = {}) {
+      const pulseContext = expandClearSet(initialSet, options.protectedCells || new Set(), options.colorBombOverrides || new Map());
+      const pulseSet = pulseContext.clearSet;
+      if (pulseSet.size === 0) {
+        return 0;
       }
+
+      const targetKeys = options.preClearTargets || pulseSet;
+      await animatePreClearTargeting(targetKeys);
+
+      cascadeDepth += 1;
+      const comboWord = comboWordFor(pulseSet.size, cascadeDepth);
+      if (comboWord) {
+        showComboToast(comboWord);
+        playSfx('combo');
+      }
+
+      await animateClear(pulseSet, options.fx || null);
+      playSfx('clear');
+      removeMatches(pulseSet);
+
+      const secondInitial = new Set(options.secondPulseInitial || []);
+      if (!options.suppressWrappedSecondPulse) {
+        pulseContext.wrappedCenters.forEach((centerKey) => {
+          const { row, col } = parseKey(centerKey);
+          for (let dr = -1; dr <= 1; dr += 1) {
+            for (let dc = -1; dc <= 1; dc += 1) {
+              secondInitial.add(keyOf(row + dr, col + dc));
+            }
+          }
+        });
+      }
+      if (secondInitial.size > 0) {
+        await wait(WRAPPED_PULSE_DELAY_MS);
+        const secondContext = expandClearSet(secondInitial);
+        if (secondContext.clearSet.size > 0) {
+          await animateClear(secondContext.clearSet, options.secondPulseFx || null);
+          playSfx('clear');
+          removeMatches(secondContext.clearSet);
+        }
+      }
+
+      return pulseSet.size;
     }
 
-    return pulseSet.size;
-  }
+    while (true) {
+      let clearContext;
+      let spawnPlans = new Map();
 
-  while (true) {
-    let clearContext;
-    let spawnPlans = new Map();
+      if (forcedContext) {
+        const forcedClear = forcedContext.clearSet || new Set();
+        const forcedOverrides = forcedContext.colorBombOverrides || new Map();
+        clearContext = expandClearSet(forcedClear, new Set(), forcedOverrides);
+        clearContext.fx = forcedContext.fx || null;
+        clearContext.secondPulseInitial = forcedContext.secondPulseInitial || null;
+        clearContext.secondPulseFx = forcedContext.secondPulseFx || null;
+        clearContext.suppressWrappedSecondPulse = Boolean(forcedContext.suppressWrappedSecondPulse);
+        clearContext.preClearTargets = forcedContext.preClearTargets || null;
+        clearContext.comboWaves = forcedContext.comboWaves || null;
+        clearContext.suppressWaveWrappedSecondPulse = Boolean(forcedContext.suppressWaveWrappedSecondPulse);
+        forcedContext = null;
+      } else {
+        const { matched } = findMatches();
+        if (matched.size === 0) {
+          break;
+        }
 
-    if (forcedContext) {
-      const forcedClear = forcedContext.clearSet || new Set();
-      const forcedOverrides = forcedContext.colorBombOverrides || new Map();
-      clearContext = expandClearSet(forcedClear, new Set(), forcedOverrides);
-      clearContext.fx = forcedContext.fx || null;
-      clearContext.secondPulseInitial = forcedContext.secondPulseInitial || null;
-      clearContext.secondPulseFx = forcedContext.secondPulseFx || null;
-      clearContext.suppressWrappedSecondPulse = Boolean(forcedContext.suppressWrappedSecondPulse);
-      clearContext.preClearTargets = forcedContext.preClearTargets || null;
-      clearContext.comboWaves = forcedContext.comboWaves || null;
-      clearContext.suppressWaveWrappedSecondPulse = Boolean(forcedContext.suppressWaveWrappedSecondPulse);
-      forcedContext = null;
-    } else {
-      const { matched } = findMatches();
-      if (matched.size === 0) {
+        spawnPlans = planSpecialSpawnsFromMatched(matched, preferred);
+        preferred = null;
+
+        const protectedCells = new Set(spawnPlans.keys());
+        const baseClear = new Set([...matched].filter((key) => !protectedCells.has(key)));
+        clearContext = expandClearSet(baseClear, protectedCells);
+        clearContext.fx = null;
+        clearContext.secondPulseInitial = null;
+        clearContext.secondPulseFx = null;
+        clearContext.suppressWrappedSecondPulse = false;
+        clearContext.preClearTargets = null;
+        clearContext.comboWaves = null;
+        clearContext.suppressWaveWrappedSecondPulse = false;
+      }
+
+      const clearSet = clearContext.clearSet;
+
+      if (clearSet.size === 0) {
         break;
       }
 
-      spawnPlans = planSpecialSpawnsFromMatched(matched, preferred);
-      preferred = null;
+      await runPulse(clearSet, clearContext);
 
-      const protectedCells = new Set(spawnPlans.keys());
-      const baseClear = new Set([...matched].filter((key) => !protectedCells.has(key)));
-      clearContext = expandClearSet(baseClear, protectedCells);
-      clearContext.fx = null;
-      clearContext.secondPulseInitial = null;
-      clearContext.secondPulseFx = null;
-      clearContext.suppressWrappedSecondPulse = false;
-      clearContext.preClearTargets = null;
-      clearContext.comboWaves = null;
-      clearContext.suppressWaveWrappedSecondPulse = false;
-    }
+      if (clearContext.comboWaves && clearContext.comboWaves.length > 0) {
+        for (const waveInitial of clearContext.comboWaves) {
+          if (!waveInitial || waveInitial.size === 0) continue;
+          await wait(COMBO_WAVE_DELAY_MS);
+          await runPulse(waveInitial, {
+            preClearTargets: new Set(waveInitial),
+            suppressWrappedSecondPulse: clearContext.suppressWaveWrappedSecondPulse,
+          });
+        }
+      }
 
-    const clearSet = clearContext.clearSet;
+      // True gravity: create new candies above the board and let *all* candies fall together.
+      const spawns = (() => {
+        applySpawnPlans(spawnPlans);
+        return dropAndFill();
+      })();
 
-    if (clearSet.size === 0) {
-      break;
-    }
+      // Set up newly spawned pieces above the board before animating into their final slots.
+      for (const spawn of spawns) {
+        const el = ensurePieceEl(spawn.candy.id, spawn.finalRow, spawn.col);
+        const pos = positionForCell(spawn.spawnRow, spawn.col);
+        el.classList.add('spawning');
+        el.style.transitionDuration = '0ms';
+        el.style.setProperty('--tx', `${pos.x}px`);
+        el.style.setProperty('--ty', `${pos.y}px`);
+        el.style.visibility = 'visible';
+      }
 
-    await runPulse(clearSet, clearContext);
+      await nextFrame();
+      for (const spawn of spawns) {
+        const el = pieceElsById.get(spawn.candy.id);
+        if (el && el.style.transitionDuration) {
+          el.style.transitionDuration = '';
+        }
+      }
+      renderBoard({ durationMs: DROP_DELAY_MS });
+      await wait(DROP_DELAY_MS);
 
-    if (clearContext.comboWaves && clearContext.comboWaves.length > 0) {
-      for (const waveInitial of clearContext.comboWaves) {
-        if (!waveInitial || waveInitial.size === 0) continue;
-        await wait(COMBO_WAVE_DELAY_MS);
-        await runPulse(waveInitial, {
-          preClearTargets: new Set(waveInitial),
-          suppressWrappedSecondPulse: clearContext.suppressWaveWrappedSecondPulse,
-        });
+      for (const spawn of spawns) {
+        const el = pieceElsById.get(spawn.candy.id);
+        if (el) el.classList.remove('spawning');
       }
     }
-
-    // True gravity: create new candies above the board and let *all* candies fall together.
-    const spawns = (() => {
-      applySpawnPlans(spawnPlans);
-      return dropAndFill();
-    })();
-
-    // Set up newly spawned pieces above the board before animating into their final slots.
-    for (const spawn of spawns) {
-      const el = ensurePieceEl(spawn.candy.id, spawn.finalRow, spawn.col);
-      const pos = positionForCell(spawn.spawnRow, spawn.col);
-      el.classList.add('spawning');
-      el.style.transitionDuration = '0ms';
-      el.style.setProperty('--tx', `${pos.x}px`);
-      el.style.setProperty('--ty', `${pos.y}px`);
-      el.style.visibility = 'visible';
-    }
-
-    await nextFrame();
-    for (const spawn of spawns) {
-      const el = pieceElsById.get(spawn.candy.id);
-      if (el && el.style.transitionDuration) {
-        el.style.transitionDuration = '';
-      }
-    }
-    renderBoard({ durationMs: DROP_DELAY_MS });
-    await wait(DROP_DELAY_MS);
-
-    for (const spawn of spawns) {
-      const el = pieceElsById.get(spawn.candy.id);
-      if (el) el.classList.remove('spawning');
-    }
+  } finally {
+    endBoardAnimation();
   }
 }
 
@@ -2139,67 +2149,65 @@ async function trySwap(from, to) {
     return;
   }
 
-  beginBoardAnimation();
   setLocked(true);
-  try {
-    await animateFlip(() => {
-      swapCells(from, to);
-    }, 140);
+  await animateFlip(() => {
+    swapCells(from, to);
+  }, 140);
 
-    const comboContext = buildComboClearContext(from, to);
-    if (comboContext) {
-      moves += 1;
-      updateHud();
-      playSfx('swap');
-      await resolveCascades(to, comboContext);
-      selected = null;
-      if (concludeLevelIfNeeded()) {
-        return;
-      }
-      setLocked(false);
-      return;
-    }
-
-    const { matched } = findMatches();
-
-    if (matched.size === 0) {
-      await animateFlip(() => {
-        swapCells(from, to);
-        selected = null;
-      }, 140);
-
-      const candyA = board?.[from.row]?.[from.col];
-      const candyB = board?.[to.row]?.[to.col];
-
-      const a = candyA ? pieceElsById.get(candyA.id) : null;
-      const b = candyB ? pieceElsById.get(candyB.id) : null;
-
-      if (a) {
-        a.classList.add('invalid');
-      }
-      if (b) {
-        b.classList.add('invalid');
-      }
-      playSfx('invalid');
-
-      await wait(220);
-      setLocked(false);
-      return;
-    }
-
+  const comboContext = buildComboClearContext(from, to);
+  if (comboContext) {
     moves += 1;
     updateHud();
     playSfx('swap');
+    await resolveCascades(to, comboContext);
     selected = null;
-    await resolveCascades(to, null);
     if (concludeLevelIfNeeded()) {
+      setLocked(false);
       return;
     }
     setLocked(false);
-  } finally {
-    endBoardAnimation();
+    return;
   }
+
+  const { matched } = findMatches();
+
+  if (matched.size === 0) {
+    await animateFlip(() => {
+      swapCells(from, to);
+      selected = null;
+    }, 140);
+
+    const candyA = board?.[from.row]?.[from.col];
+    const candyB = board?.[to.row]?.[to.col];
+
+    const a = candyA ? pieceElsById.get(candyA.id) : null;
+    const b = candyB ? pieceElsById.get(candyB.id) : null;
+
+    if (a) {
+      a.classList.add('invalid');
+    }
+    if (b) {
+      b.classList.add('invalid');
+    }
+    playSfx('invalid');
+
+    await wait(220);
+    setLocked(false);
+    return;
+  }
+
+  moves += 1;
+  updateHud();
+  playSfx('swap');
+  selected = null;
+  await resolveCascades(to, null);
+  if (concludeLevelIfNeeded()) {
+    setLocked(false);
+    return;
+  }
+  setLocked(false);
 }
+
 
 async function onGemClick(event) {
   const rawTarget = event.target;

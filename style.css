@@ -223,6 +223,11 @@ body.animating .btn:hover {
   filter: none;
 }
 
+body.animating .btn:active {
+  transform: none;
+  filter: none;
+}
+
 .btn:active {
   transform: translateY(1px) scale(0.99);
 }
@@ -384,6 +389,11 @@ body.animating .btn:hover {
 
 .board-wrap--animating .gem {
   cursor: default;
+}
+
+body.animating .gem:hover,
+body.animating .gem:active {
+  filter: none;
 }
 
 .gem.spawning {
