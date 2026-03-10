@@ -13,6 +13,7 @@ const BIG_CLEAR_SHAKE_THRESHOLD = CONFIG?.thresholds?.bigClearShake ?? 8;
 const TARGET_HIGHLIGHT_THRESHOLD = CONFIG?.thresholds?.targetHighlight ?? 8;
 const AUDIO_STORAGE_KEY = CONFIG?.storageKeys?.audioEnabled ?? 'match3.audioEnabled';
 const DEBUG_STORAGE_KEY = CONFIG?.storageKeys?.debugEnabled ?? 'match3.debugEnabled';
+const PERF_STORAGE_KEY = CONFIG?.storageKeys?.perfEnabled ?? 'match3.perfEnabled';
 const LEVEL_STORAGE_KEY = CONFIG?.storageKeys?.levelIndex ?? 'match3.levelIndex';
 const BEST_SCORE_STORAGE_KEY = CONFIG?.storageKeys?.bestScore ?? 'match3.bestScore';
 const SFX_SOURCES = CONFIG?.sfxSources ?? {
@@ -48,6 +49,7 @@ const moveLimitEl = document.getElementById('moveLimit');
 const resetBtn = document.getElementById('resetBtn');
 const audioBtn = document.getElementById('audioBtn');
 const debugBtn = document.getElementById('debugBtn');
+const perfBtn = document.getElementById('perfBtn');
 const comboToastEl = document.getElementById('comboToast');
 const levelOverlayEl = document.getElementById('levelOverlay');
 const overlayTitleEl = document.getElementById('overlayTitle');
@@ -62,6 +64,7 @@ let moves = 0;
 let isLocked = false;
 let audioEnabled = false;
 let debugEnabled = false;
+let perfEnabled = false;
 let comboToastTimer = 0;
 let comboToastRaf = 0;
 let currentLevelIndex = 0;
@@ -86,11 +89,11 @@ const missingSfx = new Set();
 const sfxPool = new Map();
 
 function perfNow() {
-  return debugEnabled ? performance.now() : 0;
+  return perfEnabled ? performance.now() : 0;
 }
 
 function perfLog(label, startMs, extra = '') {
-  if (!debugEnabled || !startMs) return;
+  if (!perfEnabled || !startMs) return;
   const elapsed = performance.now() - startMs;
   const suffix = extra ? ` ${extra}` : '';
   console.log(`[perf] ${label} ${elapsed.toFixed(1)}ms${suffix}`);
@@ -777,6 +780,17 @@ function updateDebugButton() {
 function loadDebugPreference() {
   debugEnabled = safeGetLocalStorage(DEBUG_STORAGE_KEY) === '1';
   updateDebugButton();
+}
+
+function updatePerfButton() {
+  if (!perfBtn) return;
+  perfBtn.setAttribute('aria-pressed', perfEnabled ? 'true' : 'false');
+  perfBtn.textContent = perfEnabled ? 'Perf: On' : 'Perf: Off';
+}
+
+function loadPerfPreference() {
+  perfEnabled = safeGetLocalStorage(PERF_STORAGE_KEY) === '1';
+  updatePerfButton();
 }
 
 function clampLevelIndex(index) {
@@ -2204,6 +2218,14 @@ if (debugBtn) {
   });
 }
 
+if (perfBtn) {
+  perfBtn.addEventListener('click', () => {
+    perfEnabled = !perfEnabled;
+    updatePerfButton();
+    safeSetLocalStorage(PERF_STORAGE_KEY, perfEnabled ? '1' : '0');
+  });
+}
+
 if (overlayActionBtn) {
   overlayActionBtn.addEventListener('click', () => {
     if (pendingOutcome === 'win') {
@@ -2217,5 +2239,24 @@ if (overlayActionBtn) {
 loadProgress();
 loadAudioPreference();
 loadDebugPreference();
+loadPerfPreference();
 cacheFallbackGridMetrics();
 resetGame();
+
+window.match3State = {
+  get debugEnabled() {
+    return debugEnabled;
+  },
+  get perfEnabled() {
+    return perfEnabled;
+  },
+  get level() {
+    return currentLevelIndex + 1;
+  },
+  get score() {
+    return score;
+  },
+  get moves() {
+    return moves;
+  },
+};
