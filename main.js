@@ -1738,6 +1738,77 @@ function applySpawnPlans(spawnPlans) {
   });
 }
 
+function countRecoverableHoles() {
+  let holes = 0;
+  for (let row = 0; row < BOARD_SIZE; row += 1) {
+    for (let col = 0; col < BOARD_SIZE; col += 1) {
+      if (isStoneCell(row, col)) continue;
+      if (board[row][col] === null) {
+        holes += 1;
+      }
+    }
+  }
+  return holes;
+}
+
+async function animateSpawnedCandies(spawns) {
+  if (spawns.length > 0) {
+    // Position new pieces above the board first so gravity animates from their spawn rows.
+    for (const spawn of spawns) {
+      const el = ensurePieceEl(spawn.candy.id, spawn.finalRow, spawn.col);
+      const pos = positionForCell(spawn.spawnRow, spawn.col);
+      el.classList.add('spawning');
+      el.style.transitionDuration = '0ms';
+      el.style.setProperty('--tx', `${pos.x}px`);
+      el.style.setProperty('--ty', `${pos.y}px`);
+      el.style.visibility = 'visible';
+    }
+
+    await nextFrame();
+    for (const spawn of spawns) {
+      const el = pieceElsById.get(spawn.candy.id);
+      if (el && el.style.transitionDuration) {
+        el.style.transitionDuration = '';
+      }
+    }
+  }
+
+  renderBoard({ durationMs: DROP_DELAY_MS });
+  await wait(DROP_DELAY_MS);
+
+  for (const spawn of spawns) {
+    const el = pieceElsById.get(spawn.candy.id);
+    if (el) el.classList.remove('spawning');
+  }
+}
+
+async function stabilizeGravity(maxSteps = 6) {
+  const perfStart = perfNow();
+  let steps = 0;
+  let holes = countRecoverableHoles();
+
+  while (holes > 0 && steps < maxSteps) {
+    applySpawnPlans(new Map());
+    const spawns = dropAndFill();
+    if (spawns.length === 0) {
+      if (perfEnabled) {
+        console.warn('[perf] gravity stabilize stalled', { steps, holes });
+      }
+      break;
+    }
+
+    steps += 1;
+    await animateSpawnedCandies(spawns);
+    holes = countRecoverableHoles();
+  }
+
+  if (perfEnabled) {
+    perfLog('gravity stabilize', perfStart, `steps=${steps} holes=${holes}`);
+  }
+
+  return holes === 0;
+}
+
 function collectCellsByColor(color, exclude = null) {
   const cells = [];
   for (let row = 0; row < BOARD_SIZE; row += 1) {
@@ -2002,49 +2073,10 @@ async function resolveCascades(preferredSpawnCell, initialForcedContext = null) 
     let forcedContext = initialForcedContext;
     let cascadeDepth = 0;
 
-    function hasRecoverableHoles() {
-      for (let row = 0; row < BOARD_SIZE; row += 1) {
-        for (let col = 0; col < BOARD_SIZE; col += 1) {
-          if (isStoneCell(row, col)) continue;
-          if (board[row][col] === null) {
-            return true;
-          }
-        }
-      }
-      return false;
-    }
-
     async function runGravityStep(spawnPlans) {
-      const spawns = (() => {
-        applySpawnPlans(spawnPlans);
-        return dropAndFill();
-      })();
-
-      // Set up newly spawned pieces above the board before animating into their final slots.
-      for (const spawn of spawns) {
-        const el = ensurePieceEl(spawn.candy.id, spawn.finalRow, spawn.col);
-        const pos = positionForCell(spawn.spawnRow, spawn.col);
-        el.classList.add('spawning');
-        el.style.transitionDuration = '0ms';
-        el.style.setProperty('--tx', `${pos.x}px`);
-        el.style.setProperty('--ty', `${pos.y}px`);
-        el.style.visibility = 'visible';
-      }
-
-      await nextFrame();
-      for (const spawn of spawns) {
-        const el = pieceElsById.get(spawn.candy.id);
-        if (el && el.style.transitionDuration) {
-          el.style.transitionDuration = '';
-        }
-      }
-      renderBoard({ durationMs: DROP_DELAY_MS });
-      await wait(DROP_DELAY_MS);
-
-      for (const spawn of spawns) {
-        const el = pieceElsById.get(spawn.candy.id);
-        if (el) el.classList.remove('spawning');
-      }
+      applySpawnPlans(spawnPlans);
+      const spawns = dropAndFill();
+      await animateSpawnedCandies(spawns);
     }
 
     async function runPulse(initialSet, options = {}) {
@@ -2095,6 +2127,13 @@ async function resolveCascades(preferredSpawnCell, initialForcedContext = null) 
     while (true) {
       let clearContext;
       let spawnPlans = new Map();
+
+      if (countRecoverableHoles() > 0) {
+        const stabilized = await stabilizeGravity(3);
+        if (!stabilized) {
+          break;
+        }
+      }
 
       if (forcedContext) {
         const forcedClear = forcedContext.clearSet || new Set();
@@ -2150,16 +2189,17 @@ async function resolveCascades(preferredSpawnCell, initialForcedContext = null) 
 
       // True gravity: create new candies above the board and let *all* candies fall together.
       await runGravityStep(spawnPlans);
+
+      if (countRecoverableHoles() > 0) {
+        const stabilized = await stabilizeGravity(3);
+        if (!stabilized) {
+          break;
+        }
+      }
     }
 
-    if (hasRecoverableHoles()) {
-      const recoveryPerfStart = perfNow();
-      let recoveryIterations = 0;
-      for (let i = 0; i < 3 && hasRecoverableHoles(); i += 1) {
-        recoveryIterations += 1;
-        await runGravityStep(new Map());
-      }
-      perfLog('resolveCascades recovery-warning', recoveryPerfStart, `iterations=${recoveryIterations}`);
+    if (countRecoverableHoles() > 0) {
+      await stabilizeGravity(3);
     }
   } finally {
     endBoardAnimation();
@@ -2188,6 +2228,7 @@ async function trySwap(from, to) {
       playSfx('swap');
       selected = null;
       await resolveCascades(to, comboContext);
+      renderBoard();
       concludeLevelIfNeeded();
       return;
     }
@@ -2227,6 +2268,7 @@ async function trySwap(from, to) {
     playSfx('swap');
     selected = null;
     await resolveCascades(to, null);
+    renderBoard();
     concludeLevelIfNeeded();
   } finally {
     setLocked(false);
