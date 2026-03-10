@@ -2150,62 +2150,61 @@ async function trySwap(from, to) {
   }
 
   setLocked(true);
-  await animateFlip(() => {
-    swapCells(from, to);
-  }, 140);
+  try {
+    await animateFlip(() => {
+      swapCells(from, to);
+    }, 140);
 
-  const comboContext = buildComboClearContext(from, to);
-  if (comboContext) {
+    const comboContext = buildComboClearContext(from, to);
+    if (comboContext) {
+      moves += 1;
+      updateHud();
+      playSfx('swap');
+      selected = null;
+      await resolveCascades(to, comboContext);
+      concludeLevelIfNeeded();
+      return;
+    }
+
+    const { matched } = findMatches();
+    if (matched.size === 0) {
+      await animateFlip(() => {
+        swapCells(from, to);
+        selected = null;
+      }, 140);
+
+      const candyA = board?.[from.row]?.[from.col];
+      const candyB = board?.[to.row]?.[to.col];
+      const a = candyA ? pieceElsById.get(candyA.id) : null;
+      const b = candyB ? pieceElsById.get(candyB.id) : null;
+
+      if (a) {
+        a.classList.add('invalid');
+      }
+      if (b) {
+        b.classList.add('invalid');
+      }
+      playSfx('invalid');
+
+      await wait(220);
+      if (a) {
+        a.classList.remove('invalid');
+      }
+      if (b) {
+        b.classList.remove('invalid');
+      }
+      return;
+    }
+
     moves += 1;
     updateHud();
     playSfx('swap');
-    await resolveCascades(to, comboContext);
     selected = null;
-    if (concludeLevelIfNeeded()) {
-      setLocked(false);
-      return;
-    }
+    await resolveCascades(to, null);
+    concludeLevelIfNeeded();
+  } finally {
     setLocked(false);
-    return;
   }
-
-  const { matched } = findMatches();
-
-  if (matched.size === 0) {
-    await animateFlip(() => {
-      swapCells(from, to);
-      selected = null;
-    }, 140);
-
-    const candyA = board?.[from.row]?.[from.col];
-    const candyB = board?.[to.row]?.[to.col];
-
-    const a = candyA ? pieceElsById.get(candyA.id) : null;
-    const b = candyB ? pieceElsById.get(candyB.id) : null;
-
-    if (a) {
-      a.classList.add('invalid');
-    }
-    if (b) {
-      b.classList.add('invalid');
-    }
-    playSfx('invalid');
-
-    await wait(220);
-    setLocked(false);
-    return;
-  }
-
-  moves += 1;
-  updateHud();
-  playSfx('swap');
-  selected = null;
-  await resolveCascades(to, null);
-  if (concludeLevelIfNeeded()) {
-    setLocked(false);
-    return;
-  }
-  setLocked(false);
 }
 
 
