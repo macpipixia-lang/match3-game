@@ -3,19 +3,19 @@
 const CONFIG = (typeof window !== 'undefined' && window.MATCH3_CONFIG) ? window.MATCH3_CONFIG : null;
 const BOARD_SIZE = CONFIG?.boardSize ?? 8;
 const GEM_TYPES = CONFIG?.gemTypes ?? [0, 1, 2, 3, 4, 5];
-const CLEAR_DELAY_MS = 260;
-const DROP_DELAY_MS = 170;
-const WRAPPED_PULSE_DELAY_MS = 120;
-const TARGET_HIGHLIGHT_DELAY_MS = 120;
-const COMBO_WAVE_DELAY_MS = 90;
-const SCORE_PER_GEM = 10;
-const BIG_CLEAR_SHAKE_THRESHOLD = 8;
-const TARGET_HIGHLIGHT_THRESHOLD = 8;
-const AUDIO_STORAGE_KEY = 'match3.audioEnabled';
-const DEBUG_STORAGE_KEY = 'match3.debugEnabled';
-const LEVEL_STORAGE_KEY = 'match3.levelIndex';
-const BEST_SCORE_STORAGE_KEY = 'match3.bestScore';
-const SFX_SOURCES = {
+const CLEAR_DELAY_MS = CONFIG?.timing?.clearDelayMs ?? 260;
+const DROP_DELAY_MS = CONFIG?.timing?.dropDelayMs ?? 170;
+const WRAPPED_PULSE_DELAY_MS = CONFIG?.timing?.wrappedPulseDelayMs ?? 120;
+const TARGET_HIGHLIGHT_DELAY_MS = CONFIG?.timing?.targetHighlightDelayMs ?? 120;
+const COMBO_WAVE_DELAY_MS = CONFIG?.timing?.comboWaveDelayMs ?? 90;
+const SCORE_PER_GEM = CONFIG?.scoring?.scorePerGem ?? 10;
+const BIG_CLEAR_SHAKE_THRESHOLD = CONFIG?.thresholds?.bigClearShake ?? 8;
+const TARGET_HIGHLIGHT_THRESHOLD = CONFIG?.thresholds?.targetHighlight ?? 8;
+const AUDIO_STORAGE_KEY = CONFIG?.storageKeys?.audioEnabled ?? 'match3.audioEnabled';
+const DEBUG_STORAGE_KEY = CONFIG?.storageKeys?.debugEnabled ?? 'match3.debugEnabled';
+const LEVEL_STORAGE_KEY = CONFIG?.storageKeys?.levelIndex ?? 'match3.levelIndex';
+const BEST_SCORE_STORAGE_KEY = CONFIG?.storageKeys?.bestScore ?? 'match3.bestScore';
+const SFX_SOURCES = CONFIG?.sfxSources ?? {
   clear: 'assets/sfx/clear.mp3',
   swap: 'assets/sfx/swap.mp3',
   invalid: 'assets/sfx/invalid.mp3',
