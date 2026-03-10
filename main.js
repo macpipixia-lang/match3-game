@@ -1,7 +1,8 @@
 'use strict';
 
-const BOARD_SIZE = 8;
-const GEM_TYPES = [0, 1, 2, 3, 4, 5];
+const CONFIG = (typeof window !== 'undefined' && window.MATCH3_CONFIG) ? window.MATCH3_CONFIG : null;
+const BOARD_SIZE = CONFIG?.boardSize ?? 8;
+const GEM_TYPES = CONFIG?.gemTypes ?? [0, 1, 2, 3, 4, 5];
 const CLEAR_DELAY_MS = 260;
 const DROP_DELAY_MS = 170;
 const WRAPPED_PULSE_DELAY_MS = 120;
@@ -20,7 +21,7 @@ const SFX_SOURCES = {
   invalid: 'assets/sfx/invalid.mp3',
   combo: 'assets/sfx/combo.mp3',
 };
-const LEVELS = [
+const LEVELS = CONFIG?.levels ?? [
   { targetScore: 900, moveLimit: 16 },
   { targetScore: 1300, moveLimit: 18 },
   { targetScore: 1750, moveLimit: 20 },
