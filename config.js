@@ -42,8 +42,43 @@ window.MATCH3_CONFIG = {
 
   // Levels
   levels: [
+    // Level 1: score-only (backward-compatible)
     { targetScore: 900, moveLimit: 16 },
-    { targetScore: 1300, moveLimit: 18 },
-    { targetScore: 1750, moveLimit: 20 },
+
+    // Level 2: collect + clear ice
+    {
+      targetScore: 0,
+      moveLimit: 18,
+      goals: {
+        collect: { "0": 10 },
+        clearIce: 6,
+      },
+      blockers: [
+        { kind: "ice", row: 2, col: 2, hp: 1 },
+        { kind: "ice", row: 2, col: 5, hp: 1 },
+        { kind: "ice", row: 3, col: 3, hp: 1 },
+        { kind: "ice", row: 3, col: 4, hp: 1 },
+        { kind: "ice", row: 4, col: 2, hp: 1 },
+        { kind: "ice", row: 4, col: 5, hp: 1 },
+      ],
+    },
+
+    // Level 3: clear locks + stone blockers
+    {
+      targetScore: 1200,
+      moveLimit: 20,
+      goals: {
+        score: 1200,
+        clearLocks: 4,
+      },
+      blockers: [
+        { kind: "lock", row: 2, col: 1 },
+        { kind: "lock", row: 2, col: 6 },
+        { kind: "lock", row: 5, col: 1 },
+        { kind: "lock", row: 5, col: 6 },
+        { kind: "stone", row: 3, col: 0 },
+        { kind: "stone", row: 3, col: 7 },
+      ],
+    },
   ],
 };

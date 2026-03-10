@@ -46,6 +46,7 @@ const overlayBodyEl = document.getElementById('overlayBody');
 const overlayActionBtn = document.getElementById('overlayActionBtn');
 
 let board = [];
+let blockers = []; // { kind: 'ice'|'lock'|'stone', hp?: number } | null
 let selected = null;
 let score = 0;
 let moves = 0;
@@ -153,11 +154,35 @@ function createEmptyBoard() {
   return Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(null));
 }
 
+function createEmptyBlockers() {
+  return Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(null));
+}
+
+function blockerAt(row, col) {
+  if (!blockers?.[row]) return null;
+  return blockers[row][col] || null;
+}
+
+function isStoneCell(row, col) {
+  const b = blockerAt(row, col);
+  return Boolean(b && b.kind === 'stone');
+}
+
+function isLockedCell(row, col) {
+  const b = blockerAt(row, col);
+  return Boolean(b && b.kind === 'lock');
+}
+
 function generateBoardWithoutMatches() {
   board = createEmptyBoard();
 
   for (let row = 0; row < BOARD_SIZE; row += 1) {
     for (let col = 0; col < BOARD_SIZE; col += 1) {
+      if (isStoneCell(row, col)) {
+        board[row][col] = null;
+        continue;
+      }
+
       let color;
       do {
         color = randGem();
@@ -216,11 +241,36 @@ function seedDebugSpecialCandies() {
   }
 }
 
+let goalState = null;
+
+function formatGoalsForHud(level) {
+  const goals = level.goals || { score: level.targetScore };
+  const parts = [];
+  if (typeof goals.score === 'number') {
+    parts.push(`分数 ${score}/${goals.score}`);
+  }
+  if (goals.collect) {
+    Object.entries(goals.collect).forEach(([color, total]) => {
+      const remaining = Math.max(0, (goalState?.collectRemaining?.[color] ?? total));
+      parts.push(`收集${color}:${remaining}`);
+    });
+  }
+  if (typeof goals.clearIce === 'number') {
+    const remaining = Math.max(0, goalState?.iceRemaining ?? goals.clearIce);
+    parts.push(`冰 ${remaining}`);
+  }
+  if (typeof goals.clearLocks === 'number') {
+    const remaining = Math.max(0, goalState?.lockRemaining ?? goals.clearLocks);
+    parts.push(`锁 ${remaining}`);
+  }
+  return parts.join(' · ');
+}
+
 function updateHud() {
   scoreEl.textContent = String(score);
   movesEl.textContent = String(moves);
   const level = LEVELS[currentLevelIndex];
-  if (targetScoreEl) targetScoreEl.textContent = String(level.targetScore);
+  if (targetScoreEl) targetScoreEl.textContent = formatGoalsForHud(level);
   if (moveLimitEl) moveLimitEl.textContent = String(level.moveLimit);
   if (levelEl) levelEl.textContent = String(currentLevelIndex + 1);
   if (bestScoreEl) bestScoreEl.textContent = String(bestScore);
@@ -313,11 +363,21 @@ window.addEventListener('resize', () => {
 
 function updateBoardDom() {
   ensureBoardDom();
-  // Cells are used only for layout + geometry (actual pieces live in #pieces).
+  // Cells are used for layout + geometry + obstacle backgrounds (actual pieces live in #pieces).
   for (let row = 0; row < BOARD_SIZE; row += 1) {
     for (let col = 0; col < BOARD_SIZE; col += 1) {
       const btn = cellEls[row][col];
       btn.className = 'cell';
+
+      const b = blockerAt(row, col);
+      if (!b) continue;
+      if (b.kind === 'stone') {
+        btn.classList.add('cell--stone');
+      } else if (b.kind === 'ice') {
+        btn.classList.add('cell--ice');
+      } else if (b.kind === 'lock') {
+        btn.classList.add('cell--lock');
+      }
     }
   }
 }
@@ -590,16 +650,44 @@ function showLevelOverlay(win) {
   }
 }
 
+function goalsSatisfied(level) {
+  const goals = level.goals || { score: level.targetScore };
+
+  if (typeof goals.score === 'number' && score < goals.score) {
+    return false;
+  }
+
+  if (goals.collect && goalState?.collectRemaining) {
+    for (const [color, total] of Object.entries(goals.collect)) {
+      const remaining = goalState.collectRemaining[color] ?? total;
+      if (remaining > 0) return false;
+    }
+  }
+
+  if (typeof goals.clearIce === 'number') {
+    if ((goalState?.iceRemaining ?? goals.clearIce) > 0) return false;
+  }
+
+  if (typeof goals.clearLocks === 'number') {
+    if ((goalState?.lockRemaining ?? goals.clearLocks) > 0) return false;
+  }
+
+  return true;
+}
+
 function evaluateTurnOutcome() {
   const level = LEVELS[currentLevelIndex];
-  if (score >= level.targetScore) {
+
+  if (goalsSatisfied(level)) {
     pendingOutcome = 'win';
     return true;
   }
+
   if (moves >= level.moveLimit) {
     pendingOutcome = 'lose';
     return true;
   }
+
   return false;
 }
 
@@ -901,13 +989,58 @@ async function animateClear(matches, fxOverrides = null) {
   clearFxLayer();
 }
 
+function applyGoalProgressForCandy(candy) {
+  const level = LEVELS[currentLevelIndex];
+  const goals = level.goals || { score: level.targetScore };
+  if (!goalState) return;
+
+  if (goals.collect && candy && typeof candy.color === 'number') {
+    const key = String(candy.color);
+    if (Object.prototype.hasOwnProperty.call(goals.collect, key)) {
+      const remaining = goalState.collectRemaining[key] ?? goals.collect[key];
+      goalState.collectRemaining[key] = Math.max(0, remaining - 1);
+    }
+  }
+}
+
+function applyGoalProgressForBlockerCleared(kind) {
+  if (!goalState) return;
+  if (kind === 'ice') goalState.iceRemaining = Math.max(0, (goalState.iceRemaining ?? 0) - 1);
+  if (kind === 'lock') goalState.lockRemaining = Math.max(0, (goalState.lockRemaining ?? 0) - 1);
+}
+
+function damageBlockerOnCell(row, col) {
+  const b = blockerAt(row, col);
+  if (!b) return;
+  if (b.kind === 'stone') return;
+
+  if (b.kind === 'ice') {
+    b.hp = (b.hp ?? 1) - 1;
+    if (b.hp <= 0) {
+      blockers[row][col] = null;
+      applyGoalProgressForBlockerCleared('ice');
+    }
+  } else if (b.kind === 'lock') {
+    // One-hit lock.
+    blockers[row][col] = null;
+    applyGoalProgressForBlockerCleared('lock');
+  }
+}
+
 function removeMatches(matches) {
   let removedCount = 0;
 
   matches.forEach((key) => {
     const { row, col } = parseKey(key);
     if (!inBounds(row, col)) return;
-    if (!board[row][col]) return;
+    if (isStoneCell(row, col)) return;
+
+    const candy = board[row][col];
+    if (!candy) return;
+
+    applyGoalProgressForCandy(candy);
+    damageBlockerOnCell(row, col);
+
     board[row][col] = null;
     removedCount += 1;
   });
@@ -923,30 +1056,49 @@ function dropAndFill() {
   const spawns = [];
 
   for (let col = 0; col < BOARD_SIZE; col += 1) {
-    const existing = [];
-    for (let row = BOARD_SIZE - 1; row >= 0; row -= 1) {
-      const candy = board[row][col];
-      if (candy !== null) {
-        // Scan bottom → top, but keep candies in top → bottom order so gravity compaction
-        // is stable (no vertical flipping/shuffling of existing pieces).
-        existing.unshift(candy);
+    // Stones create segments; gravity + fill happens within each segment.
+    const stoneRows = [];
+    for (let row = 0; row < BOARD_SIZE; row += 1) {
+      if (isStoneCell(row, col)) {
+        stoneRows.push(row);
+        board[row][col] = null;
       }
     }
 
-    const missing = BOARD_SIZE - existing.length;
-    const newCandies = Array.from({ length: missing }, () => createNormalCandy());
+    const segmentStarts = [-1, ...stoneRows];
+    const segmentEnds = [...stoneRows, BOARD_SIZE];
 
-    const finalColumn = [...newCandies, ...existing].slice(0, BOARD_SIZE);
+    for (let s = 0; s < segmentStarts.length; s += 1) {
+      const start = segmentStarts[s];
+      const end = segmentEnds[s];
+      const rows = [];
+      for (let r = start + 1; r <= end - 1; r += 1) rows.push(r);
+      if (rows.length === 0) continue;
 
-    for (let row = 0; row < BOARD_SIZE; row += 1) {
-      board[row][col] = finalColumn[row] ?? null;
-    }
+      const existing = [];
+      for (let i = rows.length - 1; i >= 0; i -= 1) {
+        const row = rows[i];
+        const candy = board[row][col];
+        if (candy !== null) {
+          existing.unshift(candy);
+        }
+      }
 
-    for (let i = 0; i < newCandies.length; i += 1) {
-      const candy = newCandies[i];
-      const finalRow = i;
-      const spawnRow = i - missing; // e.g. missing=3 => rows -3,-2,-1
-      spawns.push({ candy, col, finalRow, spawnRow });
+      const missing = rows.length - existing.length;
+      const newCandies = Array.from({ length: missing }, () => createNormalCandy());
+      const finalSegment = [...newCandies, ...existing].slice(0, rows.length);
+
+      for (let i = 0; i < rows.length; i += 1) {
+        board[rows[i]][col] = finalSegment[i] ?? null;
+      }
+
+      // Spawn animations: spawn above the top of this segment.
+      for (let i = 0; i < newCandies.length; i += 1) {
+        const candy = newCandies[i];
+        const finalRow = rows[i];
+        const spawnRow = rows[0] + (i - missing);
+        spawns.push({ candy, col, finalRow, spawnRow });
+      }
     }
   }
 
@@ -1592,6 +1744,14 @@ async function resolveCascades(preferredSpawnCell, initialForcedContext = null) 
 }
 
 async function trySwap(from, to) {
+  // Lock/stone obstacles: prevent manual swaps.
+  if (isStoneCell(from.row, from.col) || isStoneCell(to.row, to.col) || isLockedCell(from.row, from.col) || isLockedCell(to.row, to.col)) {
+    playSfx('invalid');
+    selected = null;
+    isLocked = false;
+    return;
+  }
+
   isLocked = true;
   await animateFlip(() => {
     swapCells(from, to);
@@ -1687,12 +1847,75 @@ async function onGemClick(event) {
   await trySwap(first, clicked);
 }
 
+function initLevelGoals(level) {
+  const goals = level.goals || { score: level.targetScore };
+  goalState = {
+    collectRemaining: {},
+    iceRemaining: typeof goals.clearIce === 'number' ? goals.clearIce : 0,
+    lockRemaining: typeof goals.clearLocks === 'number' ? goals.clearLocks : 0,
+  };
+
+  if (goals.collect) {
+    for (const [color, total] of Object.entries(goals.collect)) {
+      goalState.collectRemaining[color] = total;
+    }
+  }
+}
+
+function initLevelBlockers(level) {
+  blockers = createEmptyBlockers();
+  const defs = level.blockers || [];
+  for (const def of defs) {
+    if (!def) continue;
+    const { row, col, kind } = def;
+    if (!inBounds(row, col)) continue;
+    if (kind === 'stone') {
+      blockers[row][col] = { kind: 'stone' };
+    } else if (kind === 'ice') {
+      blockers[row][col] = { kind: 'ice', hp: def.hp ?? 1 };
+    } else if (kind === 'lock') {
+      blockers[row][col] = { kind: 'lock', hp: 1 };
+    }
+  }
+
+  // Count initial obstacles for goals (if not explicitly set)
+  const goals = level.goals || {};
+  if (typeof goals.clearIce === 'number') {
+    // Use configured target.
+  } else {
+    // Derive from board.
+    let cnt = 0;
+    for (let r = 0; r < BOARD_SIZE; r += 1) {
+      for (let c = 0; c < BOARD_SIZE; c += 1) {
+        if (blockerAt(r, c)?.kind === 'ice') cnt += 1;
+      }
+    }
+    goalState.iceRemaining = cnt;
+  }
+
+  if (typeof goals.clearLocks === 'number') {
+    // Use configured target.
+  } else {
+    let cnt = 0;
+    for (let r = 0; r < BOARD_SIZE; r += 1) {
+      for (let c = 0; c < BOARD_SIZE; c += 1) {
+        if (blockerAt(r, c)?.kind === 'lock') cnt += 1;
+      }
+    }
+    goalState.lockRemaining = cnt;
+  }
+}
+
 function resetGame() {
   score = 0;
   moves = 0;
   selected = null;
   isLocked = false;
   pendingOutcome = null;
+
+  const level = LEVELS[currentLevelIndex];
+  initLevelGoals(level);
+  initLevelBlockers(level);
 
   pieceElsById.clear();
   if (piecesEl) piecesEl.innerHTML = '';
